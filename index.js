@@ -10,6 +10,10 @@ const DEFAULT_STREAM_OPTIONS = {
     // Other options could be added here if the lenient parser evolves
 };
 
+const COMMON_ENTITIES = {
+    'lt': '<', 'gt': '>', 'amp': '&', 'quot': '"', 'apos': "'"
+};
+
 const addValueToObject = (obj, key, value, textNodeNameForConcat) => {
     if (obj.hasOwnProperty(key)) {
         // If the key is the textNodeName and both current and new values are strings, concatenate them.
@@ -54,16 +58,20 @@ class PartialXMLStreamParser {
 
         this.streamingBuffer = "";
         this._activelyStreaming = false; // Initialize streaming state
+
+        // Pre-compiled regexes
+        this.attrRegex = /([\w:-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s/>]+)))?/g;
+        this.closingTagRegex = /^<\/\s*([\w:-]+)\s*>/;
+        this.openingTagRegex = /^<\s*([\w:-]+)((?:\s+[\w:-]+(?:=(?:"[^"]*"|'[^']*'|[^\s/>]+))?)*\s*)?(\/?)>/;
+        this.stopNodeRegexCache = {};
     }
 
     _decodeXmlEntities(text) {
         if (typeof text !== 'string') return text;
         return text.replace(/&(lt|gt|amp|quot|apos|#(\d+)|#x([\da-fA-F]+));/g, (match, name, dec, hex) => {
-            if (name === 'lt') return '<';
-            if (name === 'gt') return '>';
-            if (name === 'amp') return '&';
-            if (name === 'quot') return '"';
-            if (name === 'apos') return "'";
+            if (COMMON_ENTITIES[name]) {
+                return COMMON_ENTITIES[name];
+            }
             if (dec) return String.fromCharCode(parseInt(dec, 10));
             if (hex) return String.fromCharCode(parseInt(hex, 16));
             return match; // Should not happen with the regex
@@ -81,10 +89,8 @@ class PartialXMLStreamParser {
         const trimmedValue = value.trim();
         if (trimmedValue !== "" && !isNaN(Number(trimmedValue))) {
             // Ensure the entire trimmed string is a valid number representation
-            // For example, "123" is valid, "123.45" is valid, but "123xyz" or "1.2.3" is not.
-            // Number(value) can sometimes parse "123xyz" as 123, so we need a stricter check.
             const num = Number(trimmedValue);
-            if (String(num) === trimmedValue) { // Check if string representation matches
+            if (String(num) === trimmedValue) { 
                  return num;
             }
         }
@@ -94,9 +100,9 @@ class PartialXMLStreamParser {
     _parseAttributes(attributesString, attributeNamePrefix) {
         const attrs = {};
         if (attributesString) {
-            const attrRegex = /([\w:-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s/>]+)))?/g;
+            this.attrRegex.lastIndex = 0; // Reset lastIndex before using exec in a loop
             let match;
-            while ((match = attrRegex.exec(attributesString)) !== null) {
+            while ((match = this.attrRegex.exec(attributesString)) !== null) {
                 const attrName = match[1];
                 let attrValue;
 
@@ -164,7 +170,7 @@ class PartialXMLStreamParser {
                 }
 
                 if (xmlString[i + 1] === '/') {
-                    const closingTagMatch = xmlString.substring(i).match(/^<\/\s*([\w:-]+)\s*>/);
+                    const closingTagMatch = xmlString.substring(i).match(this.closingTagRegex);
                     if (closingTagMatch) {
                         const tagName = closingTagMatch[1];
                         if (tagStack.length > 0 && tagStack[tagStack.length - 1].tagName === tagName) {
@@ -207,7 +213,7 @@ class PartialXMLStreamParser {
                         i = xmlString.length;
                     }
                 } else { 
-                    const openingTagMatch = xmlString.substring(i).match(/^<\s*([\w:-]+)((?:\s+[\w:-]+(?:=(?:"[^"]*"|'[^']*'|[^\s/>]+))?)*\s*)?(\/?)>/);
+                    const openingTagMatch = xmlString.substring(i).match(this.openingTagRegex);
                     if (openingTagMatch) {
                         const tagName = openingTagMatch[1];
                         const attributesString = (openingTagMatch[2] || "").trim();
@@ -215,12 +221,8 @@ class PartialXMLStreamParser {
                         
                         const parsedAttributes = this._parseAttributes(attributesString, attributeNamePrefix);
 
-                        let currentPath = tagStack.map(t => t.tagName).join('.');
-                        if (currentPath) {
-                            currentPath += '.' + tagName;
-                        } else {
-                            currentPath = tagName;
-                        }
+                        const parentPath = tagStack.length > 0 ? tagStack[tagStack.length - 1].path : '';
+                        const currentPath = parentPath ? `${parentPath}.${tagName}` : tagName;
                         
                         const isSimpleStopNode = this.simpleStopNodes.has(tagName);
                         const isPathStopNode = this.pathStopNodes.has(currentPath);
@@ -236,11 +238,15 @@ class PartialXMLStreamParser {
                             let rawContentEnd = -1;
                             let closingTagLength = 0;
 
-                            const contentSearchRegexStr = `<\\s*${tagName}(?:\\s[^>]*)?>|<\\/\\s*${tagName}\\s*>`;
-                            const contentSearchRegex = new RegExp(contentSearchRegexStr, "gi");
+                            let contentSearchRegex = this.stopNodeRegexCache[tagName];
+                            if (!contentSearchRegex) {
+                                const contentSearchRegexStr = `<\\s*${tagName}(?:\\s[^>]*)?>|<\\/\\s*${tagName}\\s*>`;
+                                contentSearchRegex = new RegExp(contentSearchRegexStr, "g"); // 'g' flag, no 'i'
+                                this.stopNodeRegexCache[tagName] = contentSearchRegex;
+                            }
+                            contentSearchRegex.lastIndex = searchPos; // Reset lastIndex before use
 
                             while(searchPos < xmlString.length) {
-                                contentSearchRegex.lastIndex = searchPos;
                                 const match = contentSearchRegex.exec(xmlString);
                                 if (!match) break;
 
@@ -283,7 +289,7 @@ class PartialXMLStreamParser {
                             }
 
                             if (!isSelfClosing) {
-                                tagStack.push({ tagName: tagName, objPtr: newObj, textOnly: true });
+                                tagStack.push({ tagName: tagName, objPtr: newObj, textOnly: true, path: currentPath });
                                 currentPointer = newObj;
                             }
                             i += openingTagMatch[0].length;
@@ -310,7 +316,6 @@ class PartialXMLStreamParser {
                 if (trimmedText.length > 0) {
                     let processedText = this._decodeXmlEntities(text);
                     if (this.customOptions.parsePrimitives) {
-                        // For regular text, parse the decoded original text directly
                         processedText = this._tryParsePrimitive(processedText);
                     }
 
