@@ -1,0 +1,21 @@
+{
+  "name": "partial-xml-stream-parser",
+  "version": "1.0.0",
+  "description": "A lenient XML stream parser that can handle incomplete or malformed XML data.",
+  "main": "index.js",
+  "scripts": {
+    "test": "CI=true vitest"
+  },
+  "keywords": [
+    "xml",
+    "stream",
+    "parser",
+    "partial",
+    "lenient"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "vitest": "^3.1.3"
+  }
+}
