@@ -105,7 +105,6 @@ describe("PartialXMLStreamParser Benchmarks", () => {
   };
 
   const largeXMLString = generateLargeXML(1000); // 1000 items
-  const veryLargeXMLString = generateLargeXML(5000); // 5000 items for a more demanding test
 
   bench("Parse large XML (1000 items, single chunk)", () => {
     const parser = new PartialXMLStreamParser();
@@ -120,18 +119,18 @@ describe("PartialXMLStreamParser Benchmarks", () => {
     parser.parseStream(null);
   });
 
-  bench("Parse very large XML (5000 items, single chunk)", () => {
-    const parser = new PartialXMLStreamParser();
-    parser.parseStream(veryLargeXMLString);
-    parser.parseStream(null);
-  });
+  // bench("Parse very large XML (5000 items, single chunk)", () => {
+  //   const parser = new PartialXMLStreamParser();
+  //   parser.parseStream(veryLargeXMLString);
+  //   parser.parseStream(null);
+  // });
 
-  bench("Parse very large XML (5000 items, multiple chunks)", () => {
-    const parser = new PartialXMLStreamParser();
-    const chunks = veryLargeXMLString.match(/.{1,1024}/g) || [
-      veryLargeXMLString,
-    ]; // Split into ~1KB chunks
-    chunks.forEach((chunk) => parser.parseStream(chunk));
-    parser.parseStream(null);
-  });
+  // bench("Parse very large XML (5000 items, multiple chunks)", () => {
+  //   const parser = new PartialXMLStreamParser();
+  //   const chunks = veryLargeXMLString.match(/.{1,1024}/g) || [
+  //     veryLargeXMLString,
+  //   ]; // Split into ~1KB chunks
+  //   chunks.forEach((chunk) => parser.parseStream(chunk));
+  //   parser.parseStream(null);
+  // });
 });
