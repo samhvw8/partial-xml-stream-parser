@@ -4,12 +4,12 @@ A lenient, streaming XML parser for Node.js. This parser is designed to handle X
 
 ## Features
 
-*   **Streaming Parser**: Processes XML data in chunks.
-*   **Lenient**: Attempts to parse malformed or incomplete XML.
-*   **Object Output**: Converts XML to a JavaScript object structure.
-*   **Attribute Handling**: Parses XML attributes with a configurable prefix.
-*   **Text Node Handling**: Manages text content within tags.
-*   **Entity Decoding**: Decodes basic XML entities (`<`, `>`, `&`, `"`, `'`).
+- **Streaming Parser**: Processes XML data in chunks.
+- **Lenient**: Attempts to parse malformed or incomplete XML.
+- **Object Output**: Converts XML to a JavaScript object structure.
+- **Attribute Handling**: Parses XML attributes with a configurable prefix.
+- **Text Node Handling**: Manages text content within tags.
+- **Entity Decoding**: Decodes basic XML entities (`<`, `>`, `&`, `"`, `'`).
 
 ## Installation
 
@@ -18,21 +18,22 @@ npm install partial-xml-stream-parser
 # or
 yarn add partial-xml-stream-parser
 ```
+
 (Note: This package is not yet published to npm. This is a placeholder for installation instructions.)
 
 ## Usage
 
 ```javascript
-const PartialXMLStreamParser = require('partial-xml-stream-parser');
+const PartialXMLStreamParser = require("partial-xml-stream-parser");
 
 const parser = new PartialXMLStreamParser({
-    textNodeName: "#text",       // Optional: Default is "#text"
-    attributeNamePrefix: "@"     // Optional: Default is "@"
+  textNodeName: "#text", // Optional: Default is "#text"
+  attributeNamePrefix: "@", // Optional: Default is "@"
 });
 
 let result;
 
-result = parser.parseStream("<root><item id=\"1\">Te");
+result = parser.parseStream('<root><item id="1">Te');
 console.log(JSON.stringify(result, null, 2));
 // Output:
 // {
@@ -85,19 +86,19 @@ console.log(JSON.stringify(result, null, 2));
 
 Creates a new parser instance.
 
-*   `options` (Object, Optional):
-    *   `textNodeName` (String): The key to use for text content. Defaults to `"#text"`.
-    *   `attributeNamePrefix` (String): The prefix for attribute names. Defaults to `"@"`.
+- `options` (Object, Optional):
+  - `textNodeName` (String): The key to use for text content. Defaults to `"#text"`.
+  - `attributeNamePrefix` (String): The prefix for attribute names. Defaults to `"@"`.
 
 ### `parser.parseStream(xmlChunk)`
 
 Parses a chunk of XML.
 
-*   `xmlChunk` (String | Buffer | null | undefined): The XML chunk to process.
-    *   Pass a string or Buffer containing XML data.
-    *   Pass `null` or `undefined` to signal the end of the stream.
-    *   Passing an empty string `""` indicates an empty chunk but not necessarily the end of the stream.
-*   Returns (Object): The partially or fully parsed JavaScript object. The object will have a `_partial` boolean property indicating if the stream is considered ongoing (`true`) or complete (`false`).
+- `xmlChunk` (String | Buffer | null | undefined): The XML chunk to process.
+  - Pass a string or Buffer containing XML data.
+  - Pass `null` or `undefined` to signal the end of the stream.
+  - Passing an empty string `""` indicates an empty chunk but not necessarily the end of the stream.
+- Returns (Object): The partially or fully parsed JavaScript object. The object will have a `_partial` boolean property indicating if the stream is considered ongoing (`true`) or complete (`false`).
 
 ### `parser.addEntity(key, value)`
 
@@ -105,8 +106,8 @@ Parses a chunk of XML.
 
 Adds a custom entity.
 
-*   `key` (String): The entity name (without `&` and `;`).
-*   `value` (String): The entity value.
+- `key` (String): The entity name (without `&` and `;`).
+- `value` (String): The entity value.
 
 ## License
 

@@ -4,7 +4,8 @@
   "description": "A lenient XML stream parser that can handle incomplete or malformed XML data.",
   "main": "index.js",
   "scripts": {
-    "test": "CI=true vitest"
+    "test": "CI=true vitest",
+    "bench": "vitest bench"
   },
   "keywords": [
     "xml",
