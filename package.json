@@ -1,6 +1,6 @@
 {
   "name": "partial-xml-stream-parser",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A lenient XML stream parser that can handle incomplete or malformed XML data.",
   "main": "index.js",
   "types": "index.d.ts",
@@ -13,7 +13,11 @@
     "stream",
     "parser",
     "partial",
-    "lenient"
+    "lenient",
+    "streaming",
+    "llm",
+    "ai",
+    "language model"
   ],
   "author": "",
   "license": "MIT",

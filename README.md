@@ -15,6 +15,50 @@ A lenient, streaming XML parser for Node.js. This parser is designed to handle X
 - **Primitive Type Parsing**: Optional conversion of string values to numbers and booleans.
 - **Multiple Root Elements**: Supports XML with multiple root elements.
 
+## Use Cases
+
+### Streaming LLM (Large Language Model) Responses
+
+When working with Large Language Models that stream XML-based responses (e.g., an AI assistant providing structured data in XML format incrementally), `partial-xml-stream-parser` can be invaluable. It allows you to parse and process the XML as it arrives, without waiting for the entire response to complete. This is particularly useful for:
+
+- **Real-time UI updates**: Displaying parts of the LLM's response as soon as they are available.
+- **Early data extraction**: Acting on structured data within the XML stream before the full response is received.
+- **Handling potentially very large or unterminated streams**: Gracefully parsing what's available even if the stream is cut off or extremely long.
+
+```javascript
+// Example: Simulating an LLM streaming XML
+const llmStream = [
+  '<response><status>thinking</status><data>',
+  '<item id="1">First part of data...</item>',
+  '<item id="2">Second part, still thinking...',
+  ' still processing...</item></data><status>partial</status>',
+  '</response>' // Let's imagine the stream ends here, maybe prematurely
+];
+
+const parser = new PartialXMLStreamParser();
+
+llmStream.forEach(chunk => {
+  const result = parser.parseStream(chunk);
+  if (result && result.xml) {
+    console.log('--- Partial LLM XML ---');
+    console.log(JSON.stringify(result.xml, null, 2));
+    // You could update UI or trigger actions based on partial data here
+    if (result.xml.response && result.xml.response.data && result.xml.response.data.item) {
+      const items = Array.isArray(result.xml.response.data.item) ? result.xml.response.data.item : [result.xml.response.data.item];
+      items.forEach(item => {
+        if (item["#text"] && item["#text"].includes("still processing...")) {
+          console.log(`Item ${item["@id"]} is still processing.`);
+        }
+      });
+    }
+  }
+});
+
+const finalResult = parser.parseStream(null); // Signal end of stream
+console.log('--- Final LLM XML ---');
+console.log(JSON.stringify(finalResult.xml, null, 2));
+```
+
 ## Installation
 
 ```bash
