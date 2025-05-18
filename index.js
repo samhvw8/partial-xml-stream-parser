@@ -7,7 +7,6 @@ const DEFAULT_STREAM_OPTIONS = {
     stopNodes: [], // Array of tag names that should not have their children parsed
     alwaysCreateTextNode: false, // If true, text content is always in a #text node
     parsePrimitives: false, // If true, attempts to parse numbers and booleans
-    // Other options could be added here if the lenient parser evolves
 };
 
 const COMMON_ENTITIES = {
@@ -16,11 +15,9 @@ const COMMON_ENTITIES = {
 
 const addValueToObject = (obj, key, value, textNodeNameForConcat) => {
     if (obj.hasOwnProperty(key)) {
-        // If the key is the textNodeName and both current and new values are strings, concatenate them.
         if (key === textNodeNameForConcat && typeof obj[key] === 'string' && typeof value === 'string') {
             obj[key] += value;
         } else {
-            // Key exists: convert to array or append
             if (!Array.isArray(obj[key])) {
                 obj[key] = [obj[key]];
             }
@@ -38,7 +35,7 @@ class PartialXMLStreamParser {
 
         this.simpleStopNodes = new Set();
         this.pathStopNodes = new Set();
-        
+
         if (mergedOptions.stopNodes) {
             const stopNodesArray = Array.isArray(mergedOptions.stopNodes) ? mergedOptions.stopNodes : [mergedOptions.stopNodes];
             stopNodesArray.forEach(node => {
@@ -51,18 +48,18 @@ class PartialXMLStreamParser {
                 }
             });
         }
-        
+
         this.customOptions = mergedOptions;
-        // We don't need to clear this.customOptions.stopNodes as it's not directly used by the parsing logic anymore.
-        // The parsing logic now uses this.simpleStopNodes and this.pathStopNodes.
-
         this.streamingBuffer = "";
-        this._activelyStreaming = false; // Initialize streaming state
+        this._activelyStreaming = false;
 
-        // Pre-compiled regexes
         this.attrRegex = /([\w:-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s/>]+)))?/g;
-        this.closingTagRegex = /^<\/\s*([\w:-]+)\s*>/;
-        this.openingTagRegex = /^<\s*([\w:-]+)((?:\s+[\w:-]+(?:=(?:"[^"]*"|'[^']*'|[^\s/>]+))?)*\s*)?(\/?)>/;
+        this.commentRegex = /<!--/g;
+        this.cdataOpenRegex = /<!\[CDATA\[/g;
+        this.doctypeRegex = /<!DOCTYPE/g;
+        this.xmlDeclRegex = /<\?xml/g;
+        this.closingTagRegex = /<\/\s*([\w:-]+)\s*>/g; // Removed ^, added g
+        this.openingTagRegex = /<\s*([\w:-]+)((?:\s+[\w:-]+(?:=(?:"[^"]*"|'[^']*'|[^\s/>]+))?)*\s*)?(\/?)>/g; // Removed ^, added g
         this.stopNodeRegexCache = {};
     }
 
@@ -74,24 +71,20 @@ class PartialXMLStreamParser {
             }
             if (dec) return String.fromCharCode(parseInt(dec, 10));
             if (hex) return String.fromCharCode(parseInt(hex, 16));
-            return match; // Should not happen with the regex
+            return match;
         });
     }
 
     _tryParsePrimitive(value) {
         if (typeof value !== 'string') return value;
-
         const lowerVal = value.toLowerCase();
         if (lowerVal === 'true') return true;
         if (lowerVal === 'false') return false;
-
-        // Check if it's a number (integer or float)
-        const trimmedValue = value.trim();
-        if (trimmedValue !== "" && !isNaN(Number(trimmedValue))) {
-            // Ensure the entire trimmed string is a valid number representation
-            const num = Number(trimmedValue);
-            if (String(num) === trimmedValue) { 
-                 return num;
+        const trimmedValueForCheck = value.trim();
+        if (trimmedValueForCheck.length > 0 && !isNaN(Number(trimmedValueForCheck))) {
+            const num = Number(trimmedValueForCheck);
+            if (String(num) === trimmedValueForCheck) {
+                return num;
             }
         }
         return value;
@@ -100,22 +93,20 @@ class PartialXMLStreamParser {
     _parseAttributes(attributesString, attributeNamePrefix) {
         const attrs = {};
         if (attributesString) {
-            this.attrRegex.lastIndex = 0; // Reset lastIndex before using exec in a loop
+            this.attrRegex.lastIndex = 0;
             let match;
             while ((match = this.attrRegex.exec(attributesString)) !== null) {
                 const attrName = match[1];
                 let attrValue;
-
-                if (match[2] !== undefined) { // Double-quoted
+                if (match[2] !== undefined) {
                     attrValue = this._decodeXmlEntities(match[2]);
-                } else if (match[3] !== undefined) { // Single-quoted
+                } else if (match[3] !== undefined) {
                     attrValue = this._decodeXmlEntities(match[3]);
-                } else if (match[4] !== undefined) { // Unquoted
+                } else if (match[4] !== undefined) {
                     attrValue = this._decodeXmlEntities(match[4]);
-                } else { // Boolean attribute (no value part)
+                } else {
                     attrValue = true;
                 }
-                
                 if (this.customOptions.parsePrimitives && typeof attrValue === 'string') {
                     attrs[`${attributeNamePrefix}${attrName}`] = this._tryParsePrimitive(attrValue);
                 } else {
@@ -129,201 +120,237 @@ class PartialXMLStreamParser {
     _parseChunkToPartialObject(xmlString) {
         const root = {};
         let currentPointer = root;
-        const tagStack = []; 
-
+        const tagStack = [];
         const textNodeName = this.customOptions.textNodeName;
         const attributeNamePrefix = this.customOptions.attributeNamePrefix !== undefined ? this.customOptions.attributeNamePrefix : "@";
-
         let i = 0;
-        while (i < xmlString.length) {
-            const char = xmlString[i];
-            if (char === '<') {
-                if (xmlString.startsWith("<!--", i)) {
-                    const commentEnd = xmlString.indexOf("-->", i + 4);
-                    if (commentEnd === -1) {
-                        i = xmlString.length;
-                    } else {
-                        i = commentEnd + 3;
-                    }
-                    continue;
+        const len = xmlString.length;
+
+        while (i < len) {
+            if (xmlString[i] === '<') {
+                let match;
+                let matchedPrefix = false;
+
+                this.commentRegex.lastIndex = i;
+                if ((match = this.commentRegex.exec(xmlString)) && match.index === i) {
+                    const commentEnd = xmlString.indexOf("-->", i + match[0].length);
+                    i = (commentEnd === -1) ? len : commentEnd + 3;
+                    matchedPrefix = true;
                 }
-                if (xmlString.startsWith("<![CDATA[", i)) {
-                    const cdataEnd = xmlString.indexOf("]]>", i + 9);
-                    let text;
-                    if (cdataEnd === -1) { 
-                        text = xmlString.substring(i + 9);
-                        i = xmlString.length;
-                    } else {
-                        text = xmlString.substring(i + 9, cdataEnd);
-                        i = cdataEnd + 3;
+
+                if (!matchedPrefix) {
+                    this.cdataOpenRegex.lastIndex = i;
+                    if ((match = this.cdataOpenRegex.exec(xmlString)) && match.index === i) {
+                        const cdataContentStart = i + match[0].length;
+                        const cdataEnd = xmlString.indexOf("]]>", cdataContentStart);
+                        let text;
+                        if (cdataEnd === -1) {
+                            text = xmlString.substring(cdataContentStart);
+                            i = len;
+                        } else {
+                            text = xmlString.substring(cdataContentStart, cdataEnd);
+                            i = cdataEnd + 3;
+                        }
+                        if (tagStack.length > 0) {
+                            const processedText = this.customOptions.parsePrimitives ? this._tryParsePrimitive(text) : text;
+                            addValueToObject(currentPointer, textNodeName, processedText, textNodeName);
+                        }
+                        matchedPrefix = true;
                     }
-                    if (tagStack.length > 0) {
-                        const processedText = this.customOptions.parsePrimitives ? this._tryParsePrimitive(text) : text;
-                        addValueToObject(tagStack[tagStack.length - 1].objPtr, textNodeName, processedText, textNodeName);
-                    } 
-                    continue;
                 }
-                if (xmlString.startsWith("<!DOCTYPE", i) || xmlString.startsWith("<?xml", i)) {
-                    const endDeclaration = xmlString.indexOf(">", i + 2);
-                    i = (endDeclaration === -1) ? xmlString.length : endDeclaration + 1;
+
+                if (!matchedPrefix) {
+                    this.doctypeRegex.lastIndex = i;
+                    if ((match = this.doctypeRegex.exec(xmlString)) && match.index === i) {
+                        const endDeclaration = xmlString.indexOf(">", i + match[0].length);
+                        i = (endDeclaration === -1) ? len : endDeclaration + 1;
+                        matchedPrefix = true;
+                    }
+                }
+
+                if (!matchedPrefix) {
+                    this.xmlDeclRegex.lastIndex = i;
+                    if ((match = this.xmlDeclRegex.exec(xmlString)) && match.index === i) {
+                        const endDeclaration = xmlString.indexOf("?>", i + match[0].length); // XML declarations end with ?>
+                        i = (endDeclaration === -1) ? len : endDeclaration + 2; // account for ?>
+                        matchedPrefix = true;
+                    }
+                }
+
+                if (matchedPrefix) {
                     continue;
                 }
 
-                if (xmlString[i + 1] === '/') {
-                    const closingTagMatch = xmlString.substring(i).match(this.closingTagRegex);
-                    if (closingTagMatch) {
-                        const tagName = closingTagMatch[1];
+                // No longer creating remainingStr for each tag check
+                if (xmlString[i + 1] === '/') { // Potential Closing Tag
+                    this.closingTagRegex.lastIndex = i;
+                    match = this.closingTagRegex.exec(xmlString);
+                    if (match && match.index === i) { // Confirmed Closing Tag at current position
+                        const tagName = match[1];
                         if (tagStack.length > 0 && tagStack[tagStack.length - 1].tagName === tagName) {
                             const closedTagState = tagStack.pop();
                             const parentObj = (tagStack.length > 0) ? tagStack[tagStack.length - 1].objPtr : root;
-
                             if (!this.customOptions.alwaysCreateTextNode &&
                                 closedTagState.textOnly &&
-                                closedTagState.objPtr.hasOwnProperty(textNodeName)) {
+                                closedTagState.objPtr.hasOwnProperty(textNodeName) &&
+                                Object.keys(closedTagState.objPtr).length === 1) {
                                 const textVal = closedTagState.objPtr[textNodeName];
-                                if (Object.keys(closedTagState.objPtr).length === 1) {
-                                    for (const key in parentObj) {
-                                        if (parentObj[key] === closedTagState.objPtr) {
-                                            parentObj[key] = textVal;
+                                for (const keyInParent in parentObj) {
+                                    if (parentObj[keyInParent] === closedTagState.objPtr) {
+                                        parentObj[keyInParent] = textVal;
+                                        break;
+                                    } else if (Array.isArray(parentObj[keyInParent])) {
+                                        const arr = parentObj[keyInParent];
+                                        const idx = arr.indexOf(closedTagState.objPtr);
+                                        if (idx !== -1) {
+                                            arr[idx] = textVal;
                                             break;
-                                        } else if (Array.isArray(parentObj[key])) {
-                                            const arr = parentObj[key];
-                                            const idx = arr.indexOf(closedTagState.objPtr);
-                                            if (idx !== -1) {
-                                                arr[idx] = textVal;
-                                                break;
-                                            }
                                         }
                                     }
                                 }
                             }
                             currentPointer = parentObj;
-                        } 
-                        i += closingTagMatch[0].length;
-                    } else { 
-                        const text = xmlString.substring(i); 
+                        }
+                        i += match[0].length;
+                    } else { // Not a well-formed closing tag, treat as text
+                        const text = xmlString.substring(i);
                         if (tagStack.length > 0) {
                             let processedText = this._decodeXmlEntities(text);
-                            if (this.customOptions.parsePrimitives) {
-                                processedText = this._tryParsePrimitive(processedText);
-                            }
-                            addValueToObject(tagStack[tagStack.length - 1].objPtr, textNodeName, processedText, textNodeName);
-                            tagStack[tagStack.length - 1].textOnly = false;
+                            if (this.customOptions.parsePrimitives) processedText = this._tryParsePrimitive(processedText);
+                            addValueToObject(currentPointer, textNodeName, processedText, textNodeName);
+                            if (tagStack.length > 0) tagStack[tagStack.length - 1].textOnly = false;
                         }
-                        i = xmlString.length;
+                        i = len;
                     }
-                } else { 
-                    const openingTagMatch = xmlString.substring(i).match(this.openingTagRegex);
-                    if (openingTagMatch) {
-                        const tagName = openingTagMatch[1];
-                        const attributesString = (openingTagMatch[2] || "").trim();
-                        const isSelfClosing = openingTagMatch[3] === '/';
-                        
+                } // End of Closing Tag or fallback to text
+                else { // Potential Opening Tag
+                    this.openingTagRegex.lastIndex = i;
+                    match = this.openingTagRegex.exec(xmlString);
+                    if (match && match.index === i) { // Confirmed Opening Tag at current position
+                        const tagName = match[1];
+                        const attributesString = (match[2] || "").trim();
+                        const isSelfClosing = match[3] === '/';
                         const parsedAttributes = this._parseAttributes(attributesString, attributeNamePrefix);
-
                         const parentPath = tagStack.length > 0 ? tagStack[tagStack.length - 1].path : '';
                         const currentPath = parentPath ? `${parentPath}.${tagName}` : tagName;
-                        
                         const isSimpleStopNode = this.simpleStopNodes.has(tagName);
                         const isPathStopNode = this.pathStopNodes.has(currentPath);
                         const isStopNode = !isSelfClosing && (isSimpleStopNode || isPathStopNode);
 
-                        if (isStopNode) {
-                            const stopNodeObject = { ...parsedAttributes }; 
+                        if (tagStack.length > 0) tagStack[tagStack.length - 1].textOnly = false;
 
-                            const openTagEndOffset = openingTagMatch[0].length;
+                        if (isStopNode) {
+                            const stopNodeObject = { ...parsedAttributes };
+                            addValueToObject(currentPointer, tagName, stopNodeObject, undefined);
+                            const openTagEndOffset = match[0].length;
                             const contentStartIndex = i + openTagEndOffset;
                             let depth = 1;
                             let searchPos = contentStartIndex;
                             let rawContentEnd = -1;
                             let closingTagLength = 0;
-
                             let contentSearchRegex = this.stopNodeRegexCache[tagName];
                             if (!contentSearchRegex) {
                                 const contentSearchRegexStr = `<\\s*${tagName}(?:\\s[^>]*)?>|<\\/\\s*${tagName}\\s*>`;
-                                contentSearchRegex = new RegExp(contentSearchRegexStr, "g"); // 'g' flag, no 'i'
+                                contentSearchRegex = new RegExp(contentSearchRegexStr, "g");
                                 this.stopNodeRegexCache[tagName] = contentSearchRegex;
                             }
-                            contentSearchRegex.lastIndex = searchPos; // Reset lastIndex before use
-
-                            while(searchPos < xmlString.length) {
-                                const match = contentSearchRegex.exec(xmlString);
-                                if (!match) break;
-
-                                const matchedTag = match[0];
-                                if (matchedTag.startsWith("</") || matchedTag.startsWith("<\/") ) { 
+                            contentSearchRegex.lastIndex = searchPos; // Start search from current position
+                            while (searchPos < len) {
+                                const execMatch = contentSearchRegex.exec(xmlString); // Search on the full string
+                                if (!execMatch) break;
+                                const matchedTag = execMatch[0];
+                                if (matchedTag.startsWith("</") || matchedTag.startsWith("<\\/")) { // Check for closing tag
                                     depth--;
                                     if (depth === 0) {
-                                        rawContentEnd = match.index;
+                                        rawContentEnd = execMatch.index;
                                         closingTagLength = matchedTag.length;
                                         break;
                                     }
-                                } else { 
-                                    if (!/\/\s*>$/.test(matchedTag)) { 
-                                        depth++;
-                                    }
+                                } else if (!/\/\s*>$/.test(matchedTag)) { // Not a self-closing opening tag
+                                    depth++;
                                 }
-                                searchPos = match.index + matchedTag.length;
                             }
-
                             let rawContent = "";
                             if (rawContentEnd !== -1) {
                                 rawContent = xmlString.substring(contentStartIndex, rawContentEnd);
                                 i = rawContentEnd + closingTagLength;
-                            } else { 
+                            } else {
                                 rawContent = xmlString.substring(contentStartIndex);
-                                i = xmlString.length;
+                                i = len;
                             }
-                            addValueToObject(stopNodeObject, textNodeName, rawContent, textNodeName); // Stop node content is not parsed for primitives
-                            addValueToObject(currentPointer, tagName, stopNodeObject, undefined);
-
-                            if (tagStack.length > 0) { 
-                                tagStack[tagStack.length - 1].textOnly = false;
-                            }
-                        } else { 
-                            const newObj = parsedAttributes; 
-
+                            addValueToObject(stopNodeObject, textNodeName, rawContent, textNodeName);
+                        } else {
+                            const newObj = parsedAttributes;
                             addValueToObject(currentPointer, tagName, newObj, undefined);
-                            if (tagStack.length > 0) {
-                                tagStack[tagStack.length - 1].textOnly = false;
-                            }
-
                             if (!isSelfClosing) {
                                 tagStack.push({ tagName: tagName, objPtr: newObj, textOnly: true, path: currentPath });
                                 currentPointer = newObj;
                             }
-                            i += openingTagMatch[0].length;
+                            i += match[0].length;
                         }
-                    } else { 
-                        const text = xmlString.substring(i); 
+                    } else { // Not a well-formed opening tag at i, or something else
+                        const text = xmlString.substring(i); // Fallback: treat as text
                         if (tagStack.length > 0) {
                             let processedText = this._decodeXmlEntities(text);
-                            if (this.customOptions.parsePrimitives) {
-                                processedText = this._tryParsePrimitive(processedText);
-                            }
-                            addValueToObject(tagStack[tagStack.length - 1].objPtr, textNodeName, processedText, textNodeName);
-                            tagStack[tagStack.length - 1].textOnly = false; 
+                            if (this.customOptions.parsePrimitives) processedText = this._tryParsePrimitive(processedText);
+                            addValueToObject(currentPointer, textNodeName, processedText, textNodeName);
+                            if (tagStack.length > 0) tagStack[tagStack.length - 1].textOnly = false;
                         }
-                        i = xmlString.length;
+                        i = len;
                     }
                 }
             } else { // Text Content
                 let textEnd = xmlString.indexOf('<', i);
-                if (textEnd === -1) textEnd = xmlString.length;
-                const text = xmlString.substring(i, textEnd);
-                const trimmedText = text.trim(); 
+                if (textEnd === -1) textEnd = len;
+                const rawText = xmlString.substring(i, textEnd);
 
-                if (trimmedText.length > 0) {
-                    let processedText = this._decodeXmlEntities(text);
-                    if (this.customOptions.parsePrimitives) {
-                        processedText = this._tryParsePrimitive(processedText);
+                if (rawText.length > 0) {
+                    const decodedText = this._decodeXmlEntities(rawText);
+                    const isPurelyWhitespace = decodedText.trim().length === 0;
+
+                    // Ignore text after the root element has been established
+                    if (tagStack.length === 0 && Object.keys(root).length > 0) {
+                        i = textEnd;
+                        continue;
                     }
 
-                    if (tagStack.length > 0) {
-                        const currentOpenTag = tagStack[tagStack.length - 1];
-                        addValueToObject(currentOpenTag.objPtr, textNodeName, processedText, textNodeName);
-                    } else if (Object.keys(root).length === 0) {
-                        addValueToObject(root, textNodeName, processedText, textNodeName);
+                    // Ignore purely formatting whitespace (inter-element or leading whitespace before any root tag)
+                    if (isPurelyWhitespace) {
+                        i = textEnd;
+                        continue;
+                    }
+
+                    // Process non-purely-whitespace text
+                    let processedContent;
+                    if (this.customOptions.parsePrimitives) {
+                        processedContent = this._tryParsePrimitive(decodedText);
+                    } else {
+                        processedContent = decodedText;
+                    }
+
+                    let finalValueToAdd;
+                    // if (typeof processedContent !== 'string') { 
+                    //     finalValueToAdd = processedContent;
+                    // } else { 
+                    // if (this.customOptions.alwaysCreateTextNode) {
+                    finalValueToAdd = processedContent;
+                    // } else {
+                    //     finalValueToAdd = processedContent.trim(); 
+                    // }
+                    // }
+
+                    const isPrimitive = typeof finalValueToAdd !== 'string';
+                    const isNonEmptyString = typeof finalValueToAdd === 'string' && finalValueToAdd.length > 0;
+                    // Add empty string only if alwaysCreateTextNode is true AND the original text was not purely whitespace
+                    // (e.g. <tag>{emptyVar}</tag> where emptyVar is "", not from <tag>   </tag>)
+                    const shouldAddEmptyString =
+                        typeof finalValueToAdd === 'string' &&
+                        finalValueToAdd.length === 0 &&
+                        this.customOptions.alwaysCreateTextNode &&
+                        !isPurelyWhitespace; // This condition is implicitly true if we reached here
+
+                    if (isPrimitive || isNonEmptyString || shouldAddEmptyString) {
+                        addValueToObject(currentPointer, textNodeName, finalValueToAdd, textNodeName);
                     }
                 }
                 i = textEnd;
@@ -331,7 +358,6 @@ class PartialXMLStreamParser {
         }
         return { result: root, stack: tagStack };
     }
-
 
     parseStream(xmlChunk) {
         let currentXmlString;
@@ -344,34 +370,20 @@ class PartialXMLStreamParser {
         } else {
             throw new Error("XML chunk for 'parseStream' is accepted in String, Buffer, null, or undefined form.");
         }
-
         this.streamingBuffer += currentXmlString;
-
         if (this.streamingBuffer.trim() === "") {
             if ((xmlChunk === null || xmlChunk === undefined) && !this._activelyStreaming) {
-                return { _partial: false }; 
+                return { _partial: false };
             }
             return { _partial: true, _status: "Waiting for data or empty stream" };
         }
-        this._activelyStreaming = true; 
-
+        this._activelyStreaming = true;
         const { result, stack } = this._parseChunkToPartialObject(this.streamingBuffer);
-
-        const textNodeName = this.customOptions.textNodeName;
-        const resultKeys = Object.keys(result);
-
-        if (resultKeys.length === 1 && resultKeys[0] === textNodeName && stack.length === 0) {
-            // Consistent object structure for root text
-        } else if (resultKeys.length === 0 && stack.length === 0 && this.streamingBuffer.trim().length > 0) {
-            // Buffer might contain only unparseable content or declarations
-        }
-
         result._partial = (stack.length > 0);
-
-        if (xmlChunk === null || xmlChunk === undefined) { 
-            this._activelyStreaming = false; 
-            if (!result._partial) { 
-                this.streamingBuffer = ""; 
+        if (xmlChunk === null || xmlChunk === undefined) {
+            this._activelyStreaming = false;
+            if (!result._partial) {
+                this.streamingBuffer = "";
             }
         }
         return result;
