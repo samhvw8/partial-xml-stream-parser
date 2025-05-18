@@ -16,7 +16,7 @@
     "lenient"
   ],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "devDependencies": {
     "vitest": "^3.1.3"
   }
