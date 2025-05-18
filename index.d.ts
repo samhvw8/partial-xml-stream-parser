@@ -11,25 +11,25 @@ export interface PartialXMLStreamParserOptions {
    * @default "#text"
    */
   textNodeName?: string;
-  
+
   /**
    * Prefix for attribute names in the parsed object
    * @default "@"
    */
   attributeNamePrefix?: string;
-  
+
   /**
    * Array of tag names that should not have their children parsed
    * @default []
    */
   stopNodes?: string[] | string;
-  
+
   /**
    * If true, text content is always in a #text node
-   * @default false
+   * @default true
    */
   alwaysCreateTextNode?: boolean;
-  
+
   /**
    * If true, attempts to parse numbers and booleans
    * @default false
@@ -55,12 +55,12 @@ export interface ParsingResult {
    * Metadata about the parsing result
    */
   metadata: ParsingMetadata;
-  
+
   /**
-   * The parsed XML content
-   * Can be null if no valid XML was found
+   * The parsed XML content as an array of root elements/text.
+   * Can be null if no valid XML was found and the stream ended.
    */
-  xml: any | null;
+  xml: Array<any> | null;
 }
 
 /**
@@ -72,39 +72,39 @@ declare class PartialXMLStreamParser {
    * @param options Configuration options for the parser
    */
   constructor(options?: PartialXMLStreamParserOptions);
-  
+
   /**
    * Reset the parser state
    */
   reset(): void;
-  
+
   /**
    * Parse an XML chunk in streaming mode
    * @param xmlChunk The XML chunk to parse. Can be a string, Buffer, null, undefined, or empty string.
    * @returns The parsing result, which may be partial if the XML is incomplete
    */
   parseStream(xmlChunk: string | Buffer | null | undefined): ParsingResult;
-  
+
   /**
    * The current streaming buffer
    */
   private streamingBuffer: string;
-  
+
   /**
    * Flag indicating if the parser is actively streaming
    */
   private _activelyStreaming: boolean;
-  
+
   /**
    * The accumulator for parsed XML objects
    */
   private accumulator: any[];
-  
+
   /**
    * The current pointer in the XML object tree
    */
   private currentPointer: any;
-  
+
   /**
    * The stack of tags being processed
    */
@@ -114,104 +114,107 @@ declare class PartialXMLStreamParser {
     textOnly: boolean;
     path: string;
   }>;
-  
+
   /**
    * The current parsing index in the buffer
    */
   private parsingIndex: number;
-  
+
   /**
    * The state of any incomplete structure being parsed
    */
   private incompleteStructureState: any;
-  
+
   /**
    * Context for reparsed segments
    */
   private reparsedSegmentContext: any;
-  
+
   /**
    * The custom options for this parser instance
    */
   private customOptions: PartialXMLStreamParserOptions;
-  
+
   /**
    * Regular expression for parsing attributes
    */
   private attrRegex: RegExp;
-  
+
   /**
    * Regular expression for finding XML comments
    */
   private commentRegex: RegExp;
-  
+
   /**
    * Regular expression for finding CDATA sections
    */
   private cdataOpenRegex: RegExp;
-  
+
   /**
    * Regular expression for finding DOCTYPE declarations
    */
   private doctypeRegex: RegExp;
-  
+
   /**
    * Regular expression for finding XML declarations
    */
   private xmlDeclRegex: RegExp;
-  
+
   /**
    * Regular expression for finding closing tags
    */
   private closingTagRegex: RegExp;
-  
+
   /**
    * Regular expression for finding opening tags
    */
   private openingTagRegex: RegExp;
-  
+
   /**
    * Cache for stop node regular expressions
    */
   private stopNodeRegexCache: Record<string, RegExp>;
-  
+
   /**
    * Set of simple stop nodes
    */
   private simpleStopNodes: Set<string>;
-  
+
   /**
    * Set of path stop nodes
    */
   private pathStopNodes: Set<string>;
-  
+
   /**
    * Decode XML entities in text
    * @param text The text to decode
    * @returns The decoded text
    */
   private _decodeXmlEntities(text: string): string;
-  
+
   /**
    * Try to parse a primitive value from a string
    * @param value The string value to parse
    * @returns The parsed primitive value or the original string
    */
   private _tryParsePrimitive(value: string): any;
-  
+
   /**
    * Parse attributes from an attribute string
    * @param attributesString The string containing attributes
    * @param attributeNamePrefix The prefix to use for attribute names
    * @returns An object containing the parsed attributes
    */
-  private _parseAttributes(attributesString: string, attributeNamePrefix: string): Record<string, any>;
-  
+  private _parseAttributes(
+    attributesString: string,
+    attributeNamePrefix: string,
+  ): Record<string, any>;
+
   /**
    * Process the current buffer
    */
   private _processBuffer(): void;
-  
+
   /**
    * Handle fallback text when parsing fails
    * @param buffer The buffer being parsed
@@ -219,7 +222,11 @@ declare class PartialXMLStreamParser {
    * @param textNodeName The name to use for text nodes
    * @returns The new parsing index
    */
-  private _handleFallbackText(buffer: string, startIndex: number, textNodeName: string): number;
+  private _handleFallbackText(
+    buffer: string,
+    startIndex: number,
+    textNodeName: string,
+  ): number;
 }
 
 export default PartialXMLStreamParser;

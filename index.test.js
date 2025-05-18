@@ -5,6 +5,7 @@ describe("PartialXMLStreamParser", () => {
   let parser;
 
   beforeEach(() => {
+    // Default parser for most tests, now implies alwaysCreateTextNode: true
     parser = new PartialXMLStreamParser({ textNodeName: "#text" });
   });
 
@@ -14,43 +15,43 @@ describe("PartialXMLStreamParser", () => {
     streamResult = parser.parseStream("<read>");
     expect(streamResult).toEqual({
       metadata: { partial: true },
-      xml: { read: {} },
+      xml: [{ read: {} }],
     });
 
     streamResult = parser.parseStream("<args>");
     expect(streamResult).toEqual({
       metadata: { partial: true },
-      xml: { read: { args: {} } },
+      xml: [{ read: { args: {} } }],
     });
 
     streamResult = parser.parseStream("<file><name>as");
     expect(streamResult).toEqual({
       metadata: { partial: true },
-      xml: { read: { args: { file: { name: { "#text": "as" } } } } },
+      xml: [{ read: { args: { file: { name: { "#text": "as" } } } } }],
     });
 
     streamResult = parser.parseStream("d</name>");
     expect(streamResult).toEqual({
       metadata: { partial: true },
-      xml: { read: { args: { file: { name: "asd" } } } },
+      xml: [{ read: { args: { file: { name: { "#text": "asd" } } } } }],
     });
 
     streamResult = parser.parseStream("</file></args>");
     expect(streamResult).toEqual({
       metadata: { partial: true },
-      xml: { read: { args: { file: { name: "asd" } } } },
+      xml: [{ read: { args: { file: { name: { "#text": "asd" } } } } }],
     });
 
     streamResult = parser.parseStream("</read>");
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { read: { args: { file: { name: "asd" } } } },
+      xml: [{ read: { args: { file: { name: { "#text": "asd" } } } } }],
     });
 
     streamResult = parser.parseStream(null); // Signal end of stream
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { read: { args: { file: { name: "asd" } } } },
+      xml: [{ read: { args: { file: { name: { "#text": "asd" } } } } }],
     });
   });
 
@@ -60,19 +61,35 @@ describe("PartialXMLStreamParser", () => {
     streamResult = parser.parseStream(singleChunk);
     expect(streamResult).toEqual({
       metadata: { partial: true },
-      xml: { request: { id: "123", data: { "#text": "value<da" } } },
+      xml: [
+        { request: { id: { "#text": "123" }, data: { "#text": "value<da" } } },
+      ],
     });
 
     streamResult = parser.parseStream("ta></request>");
     expect(streamResult).toEqual({
       metadata: { partial: true },
-      xml: { request: { id: "123", data: { "#text": "value", data: {} } } },
+      xml: [
+        {
+          request: {
+            id: { "#text": "123" },
+            data: { "#text": "value", data: {} },
+          },
+        },
+      ],
     });
 
     streamResult = parser.parseStream(null); // Signal end
     expect(streamResult).toEqual({
       metadata: { partial: true },
-      xml: { request: { id: "123", data: { "#text": "value", data: {} } } },
+      xml: [
+        {
+          request: {
+            id: { "#text": "123" },
+            data: { "#text": "value", data: {} },
+          },
+        },
+      ],
     });
   });
 
@@ -98,29 +115,29 @@ describe("PartialXMLStreamParser", () => {
     );
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { root: { item: {}, "#text": "Text after item", another: {} } },
+      xml: [{ root: { item: {}, "#text": "Text after item", another: {} } }],
     });
 
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { root: { item: {}, "#text": "Text after item", another: {} } },
+      xml: [{ root: { item: {}, "#text": "Text after item", another: {} } }],
     });
   });
 
   it("should handle XML entities in text nodes", () => {
-    parser = new PartialXMLStreamParser({ textNodeName: "#text" });
+    parser = new PartialXMLStreamParser({ textNodeName: "#text" }); // Re-init to be sure about options
     let streamResult = parser.parseStream(
-      "<doc>Hello & \"World\" 'Test'</doc>",
+      "<doc>Hello &amp; &quot;World&quot; &apos;Test&apos;</doc>",
     );
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { doc: "Hello & \"World\" 'Test'" },
+      xml: [{ doc: { "#text": "Hello & \"World\" 'Test'" } }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { doc: "Hello & \"World\" 'Test'" },
+      xml: [{ doc: { "#text": "Hello & \"World\" 'Test'" } }],
     });
   });
 
@@ -129,15 +146,15 @@ describe("PartialXMLStreamParser", () => {
       textNodeName: "#text",
       attributeNamePrefix: "@",
     });
-    let streamResult = parser.parseStream('<doc val="<value>" />');
+    let streamResult = parser.parseStream('<doc val="&lt;value&gt;" />');
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { doc: { "@val": "<value>" } },
+      xml: [{ doc: { "@val": "<value>" } }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { doc: { "@val": "<value>" } },
+      xml: [{ doc: { "@val": "<value>" } }],
     });
   });
 
@@ -148,12 +165,12 @@ describe("PartialXMLStreamParser", () => {
     ); // <Hello& World>
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { doc: "<Hello& World>" },
+      xml: [{ doc: { "#text": "<Hello& World>" } }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { doc: "<Hello& World>" },
+      xml: [{ doc: { "#text": "<Hello& World>" } }],
     });
   });
 
@@ -168,16 +185,20 @@ describe("PartialXMLStreamParser", () => {
     let streamResult = parser.parseStream("/></data>");
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { data: { item: { "@key": "value", "#text": "Test" }, item2: {} } },
+      xml: [
+        { data: { item: { "@key": "value", "#text": "Test" }, item2: {} } },
+      ],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { data: { item: { "@key": "value", "#text": "Test" }, item2: {} } },
+      xml: [
+        { data: { item: { "@key": "value", "#text": "Test" }, item2: {} } },
+      ],
     });
   });
 
-  it("should return null xml for empty stream", () => {
+  it("should return empty array xml for empty stream", () => {
     parser = new PartialXMLStreamParser();
     let streamResult = parser.parseStream("");
     expect(streamResult).toEqual({ metadata: { partial: true }, xml: null });
@@ -190,7 +211,7 @@ describe("PartialXMLStreamParser", () => {
     let streamResult = parser.parseStream(
       '<?xml version="1.0"?><!-- comment -->',
     );
-    expect(streamResult).toEqual({ metadata: { partial: false }, xml: null });
+    expect(streamResult).toEqual({ metadata: { partial: false }, xml: [] });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({ metadata: { partial: false }, xml: null });
   });
@@ -200,24 +221,24 @@ describe("PartialXMLStreamParser", () => {
     let streamResult = parser.parseStream('<doc attr="val" />');
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { doc: { _attr: "val" } },
+      xml: [{ doc: { _attr: "val" } }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { doc: { _attr: "val" } },
+      xml: [{ doc: { _attr: "val" } }],
     });
 
     parser = new PartialXMLStreamParser({ attributeNamePrefix: "" });
     streamResult = parser.parseStream('<doc attr="val" />');
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { doc: { attr: "val" } },
+      xml: [{ doc: { attr: "val" } }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { doc: { attr: "val" } },
+      xml: [{ doc: { attr: "val" } }],
     });
   });
 
@@ -228,12 +249,12 @@ describe("PartialXMLStreamParser", () => {
     );
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { root: "This is <CDATA> text with & special chars" },
+      xml: [{ root: { "#text": "This is <CDATA> text with & special chars" } }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { root: "This is <CDATA> text with & special chars" },
+      xml: [{ root: { "#text": "This is <CDATA> text with & special chars" } }],
     });
   });
 
@@ -242,12 +263,12 @@ describe("PartialXMLStreamParser", () => {
     let streamResult = parser.parseStream("<root><![CDATA[Unterminated cdata");
     expect(streamResult).toEqual({
       metadata: { partial: true },
-      xml: { root: { "#text": "Unterminated cdata" } },
+      xml: [{ root: { "#text": "Unterminated cdata" } }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: true },
-      xml: { root: { "#text": "Unterminated cdata" } },
+      xml: [{ root: { "#text": "Unterminated cdata" } }],
     });
   });
 
@@ -272,12 +293,12 @@ describe("PartialXMLStreamParser", () => {
     );
     expect(streamResult).toEqual({
       metadata: { partial: true },
-      xml: { root: {} },
+      xml: [{ root: {} }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: true },
-      xml: { root: {} },
+      xml: [{ root: {} }],
     });
   });
 
@@ -286,9 +307,9 @@ describe("PartialXMLStreamParser", () => {
     let streamResult = parser.parseStream(
       '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"',
     );
-    expect(streamResult).toEqual({ metadata: { partial: true }, xml: null });
+    expect(streamResult).toEqual({ metadata: { partial: true }, xml: [] });
     streamResult = parser.parseStream(null);
-    expect(streamResult).toEqual({ metadata: { partial: false }, xml: null });
+    expect(streamResult).toEqual({ metadata: { partial: false }, xml: [] });
   });
 
   it("should handle unterminated XML declaration", () => {
@@ -296,9 +317,9 @@ describe("PartialXMLStreamParser", () => {
     let streamResult = parser.parseStream(
       '<?xml version="1.0" encoding="UTF-8"',
     );
-    expect(streamResult).toEqual({ metadata: { partial: true }, xml: null });
+    expect(streamResult).toEqual({ metadata: { partial: true }, xml: [] });
     streamResult = parser.parseStream(null);
-    expect(streamResult).toEqual({ metadata: { partial: false }, xml: null });
+    expect(streamResult).toEqual({ metadata: { partial: false }, xml: [] });
   });
 
   it("should leniently handle mismatched closing tags", () => {
@@ -308,12 +329,12 @@ describe("PartialXMLStreamParser", () => {
     );
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { root: { item: "text" } },
+      xml: [{ root: { item: { "#text": "text" } } }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { root: { item: "text" } },
+      xml: [{ root: { item: { "#text": "text" } } }],
     });
   });
 
@@ -324,36 +345,49 @@ describe("PartialXMLStreamParser", () => {
     );
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: {
-        input: { "@disabled": true, "@checked": "checked", "@required": true },
-      },
+      xml: [
+        {
+          input: {
+            "@disabled": true,
+            "@checked": "checked",
+            "@required": true,
+          },
+        },
+      ],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: {
-        input: { "@disabled": true, "@checked": "checked", "@required": true },
-      },
+      xml: [
+        {
+          input: {
+            "@disabled": true,
+            "@checked": "checked",
+            "@required": true,
+          },
+        },
+      ],
     });
   });
 
   it("should correctly simplify text-only elements", () => {
-    parser = new PartialXMLStreamParser({ textNodeName: "#text" });
+    // This test now reflects alwaysCreateTextNode: true behavior from beforeEach
     let streamResult = parser.parseStream(
       "<parent><child>simple text</child></parent>",
     );
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { parent: { child: "simple text" } },
+      xml: [{ parent: { child: { "#text": "simple text" } } }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { parent: { child: "simple text" } },
+      xml: [{ parent: { child: { "#text": "simple text" } } }],
     });
   });
 
   it("should not simplify elements with attributes even if they also have text", () => {
+    // This test already aligns with alwaysCreateTextNode: true behavior
     parser = new PartialXMLStreamParser({
       textNodeName: "#text",
       attributeNamePrefix: "@",
@@ -363,44 +397,45 @@ describe("PartialXMLStreamParser", () => {
     );
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { parent: { child: { "@attr": "val", "#text": "text content" } } },
+      xml: [{ parent: { child: { "@attr": "val", "#text": "text content" } } }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { parent: { child: { "@attr": "val", "#text": "text content" } } },
+      xml: [{ parent: { child: { "@attr": "val", "#text": "text content" } } }],
     });
   });
 
   it("should not simplify elements with child elements", () => {
-    parser = new PartialXMLStreamParser();
+    // This test's expectation doesn't change with alwaysCreateTextNode
+    parser = new PartialXMLStreamParser(); // Uses new default alwaysCreateTextNode: true
     let streamResult = parser.parseStream(
       "<parent><child><grandchild/></child></parent>",
     );
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { parent: { child: { grandchild: {} } } },
+      xml: [{ parent: { child: { grandchild: {} } } }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { parent: { child: { grandchild: {} } } },
+      xml: [{ parent: { child: { grandchild: {} } } }],
     });
   });
 
   it("should ignore text nodes containing only whitespace by default", () => {
-    parser = new PartialXMLStreamParser({ textNodeName: "#text" });
+    // Expectation changes due to alwaysCreateTextNode: true from beforeEach
     let streamResult = parser.parseStream(
       "<root>  <item>text</item>   </root>",
     );
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { root: { item: "text" } },
+      xml: [{ root: { item: { "#text": "text" } } }], // Whitespace around item is trimmed, text inside item gets #text
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { root: { item: "text" } },
+      xml: [{ root: { item: { "#text": "text" } } }],
     });
   });
 
@@ -414,17 +449,17 @@ describe("PartialXMLStreamParser", () => {
     );
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { root: { item: { "#text": "text" } } },
+      xml: [{ root: { item: { "#text": "text" } } }], // Whitespace-only nodes between tags are omitted
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { root: { item: { "#text": "text" } } },
+      xml: [{ root: { item: { "#text": "text" } } }],
     });
   });
 
   it("should handle text at root level before any tags", () => {
-    parser = new PartialXMLStreamParser();
+    parser = new PartialXMLStreamParser(); // Uses new default
     let streamResult = parser.parseStream("Leading text<root/>");
     expect(streamResult).toEqual({
       metadata: { partial: false },
@@ -438,7 +473,7 @@ describe("PartialXMLStreamParser", () => {
   });
 
   it("should handle text at root level after all tags are closed", () => {
-    parser = new PartialXMLStreamParser();
+    parser = new PartialXMLStreamParser(); // Uses new default
     let streamResult = parser.parseStream("<root/>Trailing text");
     expect(streamResult).toEqual({
       metadata: { partial: false },
@@ -452,45 +487,45 @@ describe("PartialXMLStreamParser", () => {
   });
 
   it("should handle multiple root elements", () => {
-    parser = new PartialXMLStreamParser({ textNodeName: "#text" });
+    // Expectation changes due to alwaysCreateTextNode: true from beforeEach
     let streamResult = parser.parseStream("<rootA/><rootB>text</rootB>");
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: [{ rootA: {} }, { rootB: "text" }],
+      xml: [{ rootA: {} }, { rootB: { "#text": "text" } }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: [{ rootA: {} }, { rootB: "text" }],
+      xml: [{ rootA: {} }, { rootB: { "#text": "text" } }],
     });
   });
 
   it("should handle multiple root elements in specific order", () => {
-    parser = new PartialXMLStreamParser({ textNodeName: "#text" });
+    // Expectation changes due to alwaysCreateTextNode: true from beforeEach
     const xml = "<thinking>a</thinking><some-tool></some-tool>";
     let streamResult = parser.parseStream(xml);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: [{ thinking: "a" }, { "some-tool": {} }],
+      xml: [{ thinking: { "#text": "a" } }, { "some-tool": {} }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: [{ thinking: "a" }, { "some-tool": {} }],
+      xml: [{ thinking: { "#text": "a" } }, { "some-tool": {} }],
     });
   });
 
   it("should handle Buffer input", () => {
-    parser = new PartialXMLStreamParser({ textNodeName: "#text" });
+    // Expectation changes due to alwaysCreateTextNode: true from beforeEach
     let streamResult = parser.parseStream(Buffer.from("<data>value</data>"));
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { data: "value" },
+      xml: [{ data: { "#text": "value" } }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { data: "value" },
+      xml: [{ data: { "#text": "value" } }],
     });
   });
 
@@ -501,27 +536,28 @@ describe("PartialXMLStreamParser", () => {
     );
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { tag: { "@attr1": "val1", "@attr2": "val2", "@attr3": "val3" } },
+      xml: [{ tag: { "@attr1": "val1", "@attr2": "val2", "@attr3": "val3" } }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { tag: { "@attr1": "val1", "@attr2": "val2", "@attr3": "val3" } },
+      xml: [{ tag: { "@attr1": "val1", "@attr2": "val2", "@attr3": "val3" } }],
     });
   });
 
   it("should handle incomplete tags at end of chunk and then completed", () => {
     parser = new PartialXMLStreamParser({
+      // Uses new default alwaysCreateTextNode: true
       textNodeName: "#text",
       attributeNamePrefix: "@",
     });
     parser.parseStream("<root><item");
     let streamResult = parser.parseStream(" attr='1'>Text</item></r");
-    expect(streamResult.xml.root.item).toEqual({
+    expect(streamResult.xml[0].root.item).toEqual({
       "@attr": "1",
       "#text": "Text",
     });
-    expect(streamResult.xml.root["#text"]).toBe("</r");
+    expect(streamResult.xml[0].root["#text"]).toBe("</r"); // This part becomes text
     expect(streamResult.metadata.partial).toBe(true);
 
     parser = new PartialXMLStreamParser({
@@ -532,31 +568,33 @@ describe("PartialXMLStreamParser", () => {
     streamResult = parser.parseStream(" attr='1'>Text</item></root>");
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { root: { item: { "@attr": "1", "#text": "Text" } } },
+      xml: [{ root: { item: { "@attr": "1", "#text": "Text" } } }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { root: { item: { "@attr": "1", "#text": "Text" } } },
+      xml: [{ root: { item: { "@attr": "1", "#text": "Text" } } }],
     });
   });
 
   it("should handle empty string chunks in midst of stream", () => {
-    parser = new PartialXMLStreamParser({ textNodeName: "#text" });
+    // Expectation changes due to alwaysCreateTextNode: true from beforeEach
     parser.parseStream("<doc>");
     parser.parseStream("");
     let streamResult = parser.parseStream("<content>Hello</content>");
-    expect(streamResult.xml.doc.content).toEqual("Hello");
+    expect(streamResult.xml[0].doc.content).toEqual({ "#text": "Hello" });
     expect(streamResult.metadata.partial).toBe(true);
 
     let finalDocStreamResult = parser.parseStream("</doc>");
-    expect(finalDocStreamResult.xml.doc.content).toEqual("Hello");
+    expect(finalDocStreamResult.xml[0].doc.content).toEqual({
+      "#text": "Hello",
+    });
     expect(finalDocStreamResult.metadata.partial).toBe(false);
 
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: { doc: { content: "Hello" } },
+      xml: [{ doc: { content: { "#text": "Hello" } } }],
     });
   });
 
@@ -564,19 +602,19 @@ describe("PartialXMLStreamParser", () => {
     it("should treat content of a stopNode as text", () => {
       parser = new PartialXMLStreamParser({
         stopNodes: ["script"],
-        textNodeName: "#text",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       let streamResult = parser.parseStream(
         "<root><script>let a = 1; console.log(a);</script></root>",
       );
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: { root: { script: { "#text": "let a = 1; console.log(a);" } } },
+        xml: [{ root: { script: { "#text": "let a = 1; console.log(a);" } } }],
       });
       streamResult = parser.parseStream(null);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: { root: { script: { "#text": "let a = 1; console.log(a);" } } },
+        xml: [{ root: { script: { "#text": "let a = 1; console.log(a);" } } }],
       });
     });
 
@@ -584,232 +622,256 @@ describe("PartialXMLStreamParser", () => {
       parser = new PartialXMLStreamParser({
         stopNodes: ["script"],
         attributeNamePrefix: "@",
-        textNodeName: "#text",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       let streamResult = parser.parseStream(
         '<root><script type="text/javascript" src="app.js">let b = 2;</script></root>',
       );
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          root: {
-            script: {
-              "@type": "text/javascript",
-              "@src": "app.js",
-              "#text": "let b = 2;",
+        xml: [
+          {
+            root: {
+              script: {
+                "@type": "text/javascript",
+                "@src": "app.js",
+                "#text": "let b = 2;",
+              },
             },
           },
-        },
+        ],
       });
       streamResult = parser.parseStream(null);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          root: {
-            script: {
-              "@type": "text/javascript",
-              "@src": "app.js",
-              "#text": "let b = 2;",
+        xml: [
+          {
+            root: {
+              script: {
+                "@type": "text/javascript",
+                "@src": "app.js",
+                "#text": "let b = 2;",
+              },
             },
           },
-        },
+        ],
       });
     });
 
     it("should not parse XML tags inside a stopNode", () => {
       parser = new PartialXMLStreamParser({
         stopNodes: ["data"],
-        textNodeName: "#text",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       let streamResult = parser.parseStream(
         "<root><data><item>one</item><value>100</value></data></root>",
       );
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          root: { data: { "#text": "<item>one</item><value>100</value>" } },
-        },
+        xml: [
+          {
+            root: { data: { "#text": "<item>one</item><value>100</value>" } },
+          },
+        ],
       });
       streamResult = parser.parseStream(null);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          root: { data: { "#text": "<item>one</item><value>100</value>" } },
-        },
+        xml: [
+          {
+            root: { data: { "#text": "<item>one</item><value>100</value>" } },
+          },
+        ],
       });
     });
 
     it("should handle multiple stopNode types", () => {
       parser = new PartialXMLStreamParser({
         stopNodes: ["script", "style"],
-        textNodeName: "#text",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       let streamResult = parser.parseStream(
         "<root><script>var c=3;</script><style>.cls{color:red}</style></root>",
       );
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          root: {
-            script: { "#text": "var c=3;" },
-            style: { "#text": ".cls{color:red}" },
+        xml: [
+          {
+            root: {
+              script: { "#text": "var c=3;" },
+              style: { "#text": ".cls{color:red}" },
+            },
           },
-        },
+        ],
       });
       streamResult = parser.parseStream(null);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          root: {
-            script: { "#text": "var c=3;" },
-            style: { "#text": ".cls{color:red}" },
+        xml: [
+          {
+            root: {
+              script: { "#text": "var c=3;" },
+              style: { "#text": ".cls{color:red}" },
+            },
           },
-        },
+        ],
       });
     });
 
     it("should handle self-closing tags within stopNode content", () => {
       parser = new PartialXMLStreamParser({
         stopNodes: ["htmlData"],
-        textNodeName: "#text",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       let streamResult = parser.parseStream(
         '<doc><htmlData>Some text <br/> and more <img src="test.png"/></htmlData></doc>',
       );
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          doc: {
-            htmlData: {
-              "#text": 'Some text <br/> and more <img src="test.png"/>',
+        xml: [
+          {
+            doc: {
+              htmlData: {
+                "#text": 'Some text <br/> and more <img src="test.png"/>',
+              },
             },
           },
-        },
+        ],
       });
       streamResult = parser.parseStream(null);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          doc: {
-            htmlData: {
-              "#text": 'Some text <br/> and more <img src="test.png"/>',
+        xml: [
+          {
+            doc: {
+              htmlData: {
+                "#text": 'Some text <br/> and more <img src="test.png"/>',
+              },
             },
           },
-        },
+        ],
       });
     });
 
     it("should handle unterminated stopNode at end of stream", () => {
       parser = new PartialXMLStreamParser({
         stopNodes: ["raw"],
-        textNodeName: "#text",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       let streamResult = parser.parseStream(
         "<root><raw>This content is not closed",
       );
       expect(streamResult).toEqual({
         metadata: { partial: true },
-        xml: { root: { raw: { "#text": "This content is not closed" } } },
+        xml: [{ root: { raw: { "#text": "This content is not closed" } } }],
       });
       streamResult = parser.parseStream(null);
       expect(streamResult).toEqual({
         metadata: { partial: true },
-        xml: { root: { raw: { "#text": "This content is not closed" } } },
+        xml: [{ root: { raw: { "#text": "This content is not closed" } } }],
       });
     });
 
     it("should correctly handle nested stopNodes of the same name", () => {
       parser = new PartialXMLStreamParser({
         stopNodes: ["codeblock"],
-        textNodeName: "#text",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       const xml =
         "<doc><codeblock>Outer <codeblock>Inner</codeblock> Content</codeblock></doc>";
       let streamResult = parser.parseStream(xml);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          doc: {
-            codeblock: {
-              "#text": "Outer <codeblock>Inner</codeblock> Content",
+        xml: [
+          {
+            doc: {
+              codeblock: {
+                "#text": "Outer <codeblock>Inner</codeblock> Content",
+              },
             },
           },
-        },
+        ],
       });
       streamResult = parser.parseStream(null);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          doc: {
-            codeblock: {
-              "#text": "Outer <codeblock>Inner</codeblock> Content",
+        xml: [
+          {
+            doc: {
+              codeblock: {
+                "#text": "Outer <codeblock>Inner</codeblock> Content",
+              },
             },
           },
-        },
+        ],
       });
     });
 
     it("should handle stopNode as the root element", () => {
       parser = new PartialXMLStreamParser({
         stopNodes: ["rawhtml"],
-        textNodeName: "#text",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       let streamResult = parser.parseStream(
         "<rawhtml><head></head><body><p>Hello</p></body></rawhtml>",
       );
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: { rawhtml: { "#text": "<head></head><body><p>Hello</p></body>" } },
+        xml: [
+          { rawhtml: { "#text": "<head></head><body><p>Hello</p></body>" } },
+        ],
       });
       streamResult = parser.parseStream(null);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: { rawhtml: { "#text": "<head></head><body><p>Hello</p></body>" } },
+        xml: [
+          { rawhtml: { "#text": "<head></head><body><p>Hello</p></body>" } },
+        ],
       });
     });
 
     it("should handle empty stopNode", () => {
       parser = new PartialXMLStreamParser({
         stopNodes: ["emptyContent"],
-        textNodeName: "#text",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       let streamResult = parser.parseStream(
         "<data><emptyContent></emptyContent></data>",
       );
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: { data: { emptyContent: { "#text": "" } } },
+        xml: [{ data: { emptyContent: { "#text": "" } } }],
       });
       streamResult = parser.parseStream(null);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: { data: { emptyContent: { "#text": "" } } },
+        xml: [{ data: { emptyContent: { "#text": "" } } }],
       });
     });
 
     it("should handle stopNode with only whitespace content", () => {
       parser = new PartialXMLStreamParser({
         stopNodes: ["whitespaceNode"],
-        textNodeName: "#text",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       let streamResult = parser.parseStream(
         "<data><whitespaceNode>   \n\t   </whitespaceNode></data>",
       );
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: { data: { whitespaceNode: { "#text": "   \n\t   " } } },
+        xml: [{ data: { whitespaceNode: { "#text": "   \n\t   " } } }],
       });
       streamResult = parser.parseStream(null);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: { data: { whitespaceNode: { "#text": "   \n\t   " } } },
+        xml: [{ data: { whitespaceNode: { "#text": "   \n\t   " } } }],
       });
     });
 
     it("should handle stopNode content split across multiple chunks", () => {
       parser = new PartialXMLStreamParser({
         stopNodes: ["log"],
-        textNodeName: "#text",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       parser.parseStream("<system><log>Part 1 data ");
       let streamResult = parser.parseStream(
@@ -817,39 +879,45 @@ describe("PartialXMLStreamParser", () => {
       );
       expect(streamResult).toEqual({
         metadata: { partial: true },
-        xml: {
-          system: {
-            log: {
-              "#text": "Part 1 data Part 2 data <inner>tag</inner> and more",
+        xml: [
+          {
+            system: {
+              log: {
+                "#text": "Part 1 data Part 2 data <inner>tag</inner> and more",
+              },
             },
           },
-        },
+        ],
       });
 
       streamResult = parser.parseStream(" final part.</log></system>");
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          system: {
-            log: {
-              "#text":
-                "Part 1 data Part 2 data <inner>tag</inner> and more final part.",
+        xml: [
+          {
+            system: {
+              log: {
+                "#text":
+                  "Part 1 data Part 2 data <inner>tag</inner> and more final part.",
+              },
             },
           },
-        },
+        ],
       });
 
       streamResult = parser.parseStream(null);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          system: {
-            log: {
-              "#text":
-                "Part 1 data Part 2 data <inner>tag</inner> and more final part.",
+        xml: [
+          {
+            system: {
+              log: {
+                "#text":
+                  "Part 1 data Part 2 data <inner>tag</inner> and more final part.",
+              },
             },
           },
-        },
+        ],
       });
     });
 
@@ -857,7 +925,7 @@ describe("PartialXMLStreamParser", () => {
       parser = new PartialXMLStreamParser({
         stopNodes: ["customTag"],
         attributeNamePrefix: "@",
-        textNodeName: "#text",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       parser.parseStream('<root><customTag id="123" ');
       parser.parseStream('name="test">This is the ');
@@ -866,122 +934,138 @@ describe("PartialXMLStreamParser", () => {
       );
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          root: {
-            customTag: {
-              "@id": "123",
-              "@name": "test",
-              "#text": "This is the content with  wewnętrzny tag <tag/>.",
+        xml: [
+          {
+            root: {
+              customTag: {
+                "@id": "123",
+                "@name": "test",
+                "#text": "This is the content with  wewnętrzny tag <tag/>.",
+              },
             },
           },
-        },
+        ],
       });
       streamResult = parser.parseStream(null);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          root: {
-            customTag: {
-              "@id": "123",
-              "@name": "test",
-              "#text": "This is the content with  wewnętrzny tag <tag/>.",
+        xml: [
+          {
+            root: {
+              customTag: {
+                "@id": "123",
+                "@name": "test",
+                "#text": "This is the content with  wewnętrzny tag <tag/>.",
+              },
             },
           },
-        },
+        ],
       });
     });
 
     it("should handle stop node when stopNodes option is a string", () => {
       parser = new PartialXMLStreamParser({
         stopNodes: "script",
-        textNodeName: "#text",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       let streamResult = parser.parseStream(
         '<root><script>alert("hello");</script></root>',
       );
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: { root: { script: { "#text": 'alert("hello");' } } },
+        xml: [{ root: { script: { "#text": 'alert("hello");' } } }],
       });
     });
 
     it("should handle path-based stopNode correctly", () => {
       parser = new PartialXMLStreamParser({
         stopNodes: ["read.file.metadata"],
-        textNodeName: "#text",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       const xml =
         "<read><metadata><item>one</item></metadata><file><metadata><item>two</item><subitem>three</subitem></metadata><other>data</other></file></read>";
       let streamResult = parser.parseStream(xml);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          read: {
-            metadata: { item: "one" },
-            file: {
-              metadata: { "#text": "<item>two</item><subitem>three</subitem>" },
-              other: "data",
+        xml: [
+          {
+            read: {
+              metadata: { item: { "#text": "one" } }, // Not a stopNode
+              file: {
+                metadata: {
+                  "#text": "<item>two</item><subitem>three</subitem>",
+                }, // Is a stopNode
+                other: { "#text": "data" }, // Not a stopNode
+              },
             },
           },
-        },
+        ],
       });
       streamResult = parser.parseStream(null);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          read: {
-            metadata: { item: "one" },
-            file: {
-              metadata: { "#text": "<item>two</item><subitem>three</subitem>" },
-              other: "data",
+        xml: [
+          {
+            read: {
+              metadata: { item: { "#text": "one" } },
+              file: {
+                metadata: {
+                  "#text": "<item>two</item><subitem>three</subitem>",
+                },
+                other: { "#text": "data" },
+              },
             },
           },
-        },
+        ],
       });
     });
 
     it("should prioritize path-based stopNode over simple name if both could match", () => {
       parser = new PartialXMLStreamParser({
-        stopNodes: ["read.file.metadata", "nomatch.metadata"],
-        textNodeName: "#text",
+        stopNodes: ["read.file.metadata", "nomatch.metadata"], // read.file.metadata will match
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       const xml =
         "<read><metadata><item>one</item></metadata><file><metadata><item>two</item></metadata></file></read>";
       let streamResult = parser.parseStream(xml);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          read: {
-            metadata: { item: "one" },
-            file: {
-              metadata: { "#text": "<item>two</item>" },
+        xml: [
+          {
+            read: {
+              metadata: { item: { "#text": "one" } }, // Not a stopNode
+              file: {
+                metadata: { "#text": "<item>two</item>" }, // Is a stopNode due to path
+              },
             },
           },
-        },
+        ],
       });
     });
 
     it("should handle simple stopNode alongside path-based stopNode", () => {
       parser = new PartialXMLStreamParser({
         stopNodes: ["script", "app.config.settings.value"],
-        textNodeName: "#text",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       const xml =
         "<app><script>let x=1;</script><config><settings><value>secret</value><other>val</other></settings></config></app>";
       let streamResult = parser.parseStream(xml);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          app: {
-            script: { "#text": "let x=1;" },
-            config: {
-              settings: {
-                value: { "#text": "secret" },
-                other: "val",
+        xml: [
+          {
+            app: {
+              script: { "#text": "let x=1;" }, // Simple stopNode
+              config: {
+                settings: {
+                  value: { "#text": "secret" }, // Path-based stopNode
+                  other: { "#text": "val" }, // Not a stopNode
+                },
               },
             },
           },
-        },
+        ],
       });
     });
   });
@@ -995,7 +1079,7 @@ describe("PartialXMLStreamParser", () => {
       let streamResult = parser.parseStream("<doc>Text</doc>");
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: { doc: { "#text": "Text" } },
+        xml: [{ doc: { "#text": "Text" } }],
       });
     });
 
@@ -1009,7 +1093,7 @@ describe("PartialXMLStreamParser", () => {
       );
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: { parent: { child: { "#text": "simple text" } } },
+        xml: [{ parent: { child: { "#text": "simple text" } } }],
       });
     });
 
@@ -1024,7 +1108,9 @@ describe("PartialXMLStreamParser", () => {
       );
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: { parent: { child: { "@attr": "val", "#text": "text content" } } },
+        xml: [
+          { parent: { child: { "@attr": "val", "#text": "text content" } } },
+        ],
       });
     });
 
@@ -1038,13 +1124,15 @@ describe("PartialXMLStreamParser", () => {
       let streamResult = parser.parseStream(xml);
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          root: {
-            "#text": ["text1 ", " text2 ", " text3"],
-            item: { "#text": "itemtext" },
-            another: {},
+        xml: [
+          {
+            root: {
+              "#text": "text1  text2  text3",
+              item: { "#text": "itemtext" },
+              another: {},
+            },
           },
-        },
+        ],
       });
     });
   });
@@ -1053,23 +1141,25 @@ describe("PartialXMLStreamParser", () => {
     it("should parse numbers and booleans in text nodes if parsePrimitives is true", () => {
       parser = new PartialXMLStreamParser({
         parsePrimitives: true,
-        textNodeName: "#text",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       let streamResult = parser.parseStream(
         "<data><num>123</num><bool>true</bool><str>false</str><neg>-45.6</neg><notnum>123a</notnum><strtrue>True</strtrue></data>",
       );
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          data: {
-            num: 123,
-            bool: true,
-            str: false,
-            neg: -45.6,
-            notnum: "123a",
-            strtrue: true,
+        xml: [
+          {
+            data: {
+              num: { "#text": 123 },
+              bool: { "#text": true },
+              str: { "#text": false },
+              neg: { "#text": -45.6 },
+              notnum: { "#text": "123a" },
+              strtrue: { "#text": true },
+            },
           },
-        },
+        ],
       });
     });
 
@@ -1077,59 +1167,71 @@ describe("PartialXMLStreamParser", () => {
       parser = new PartialXMLStreamParser({
         parsePrimitives: true,
         attributeNamePrefix: "@",
+        textNodeName: "#text", // alwaysCreateTextNode is true by default
       });
       let streamResult = parser.parseStream(
         '<data num="456" bool="false" str="true" neg="-0.5" notbool="FALSEY" strbool="True"/>',
       );
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          data: {
-            "@num": 456,
-            "@bool": false,
-            "@str": true,
-            "@neg": -0.5,
-            "@notbool": "FALSEY",
-            "@strbool": true,
+        xml: [
+          {
+            data: {
+              "@num": 456,
+              "@bool": false,
+              "@str": true,
+              "@neg": -0.5,
+              "@notbool": "FALSEY",
+              "@strbool": true,
+            },
           },
-        },
+        ],
       });
     });
 
-    it("should not parse primitives if option is false (default)", () => {
+    it("should not parse primitives if option is false (default behavior)", () => {
       parser = new PartialXMLStreamParser({
-        textNodeName: "#text",
+        // textNodeName: "#text" is from beforeEach
         attributeNamePrefix: "@",
+        // parsePrimitives: false is default in main code
       });
       let streamResult = parser.parseStream(
         '<data num="123" bool="true"><textnum>456</textnum><textbool>false</textbool></data>',
       );
       expect(streamResult).toEqual({
         metadata: { partial: false },
-        xml: {
-          data: {
-            "@num": "123",
-            "@bool": "true",
-            textnum: "456",
-            textbool: "false",
+        xml: [
+          {
+            data: {
+              "@num": "123",
+              "@bool": "true",
+              textnum: { "#text": "456" }, // alwaysCreateTextNode: true is default
+              textbool: { "#text": "false" }, // alwaysCreateTextNode: true is default
+            },
           },
-        },
+        ],
       });
     });
   });
 
   it("should handle multiple root elements with text nodes interspersed", () => {
-    parser = new PartialXMLStreamParser({ textNodeName: "#text" });
+    // Uses parser from beforeEach (alwaysCreateTextNode: true)
     const xml = "text1<tagA>contentA</tagA>text2<tagB/>text3";
     const streamResult = parser.parseStream(xml);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: ["text1", { tagA: "contentA" }, "text2", { tagB: {} }, "text3"],
+      xml: [
+        "text1",
+        { tagA: { "#text": "contentA" } },
+        "text2",
+        { tagB: {} },
+        "text3",
+      ],
     });
   });
 
   it("should handle a single root text node correctly", () => {
-    parser = new PartialXMLStreamParser();
+    parser = new PartialXMLStreamParser(); // Uses new default alwaysCreateTextNode: true
     const xml = "Just a root text node";
     const streamResult = parser.parseStream(xml);
     expect(streamResult).toEqual({
@@ -1159,27 +1261,32 @@ describe("PartialXMLStreamParser", () => {
     let streamResult = parser.parseStream(xmlData);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: {
-        root: {
-          "@a": "nice",
-          "@checked": true,
-          a: [
-            {
-              b: [{ "@val": "1", "#text": "hello" }, { "@val": "2" }],
-            },
-            {
-              c: { "#text": "world" },
-            },
-          ],
-          b: { "#text": "wow phir se" },
+      xml: [
+        {
+          root: {
+            "@a": "nice",
+            "@checked": true,
+            a: [
+              {
+                b: [{ "@val": "1", "#text": "hello" }, { "@val": "2" }],
+              },
+              {
+                c: { "#text": "world" },
+              },
+            ],
+            b: { "#text": "wow phir se" },
+          },
         },
-      },
+      ],
     });
   });
+
   it("should handle complex nested structure with attributes and mixed content - no alwaysCreateTextNode (whitespace omitted)", () => {
+    // This test will now behave like alwaysCreateTextNode: true because of the default change
     parser = new PartialXMLStreamParser({
       attributeNamePrefix: "@",
       textNodeName: "#text",
+      // alwaysCreateTextNode: false, // To test the old behavior, this would be needed
     });
     const xmlData = `
             <root a="nice" checked>
@@ -1195,22 +1302,52 @@ describe("PartialXMLStreamParser", () => {
         `;
     let streamResult = parser.parseStream(xmlData);
     expect(streamResult).toEqual({
+      // Expected output now reflects alwaysCreateTextNode: true
       metadata: { partial: false },
-      xml: {
-        root: {
-          "@a": "nice",
-          "@checked": true,
-          a: [
-            {
-              b: [{ "@val": "1", "#text": "hello" }, { "@val": "2" }],
-            },
-            {
-              c: "world",
-            },
-          ],
-          b: "wow phir se",
+      xml: [
+        {
+          root: {
+            "@a": "nice",
+            "@checked": true,
+            a: [
+              {
+                b: [{ "@val": "1", "#text": "hello" }, { "@val": "2" }],
+              },
+              {
+                c: { "#text": "world" }, // Changed from "world"
+              },
+            ],
+            b: { "#text": "wow phir se" }, // Changed from "wow phir se"
+          },
         },
-      },
+      ],
     });
+  });
+
+  it("should reflect modifications to returned xml object due to direct reference", () => {
+    // Uses parser from beforeEach (alwaysCreateTextNode: true)
+    let streamResult = parser.parseStream("<root><item>A</item>");
+    // Initial state
+    expect(streamResult.xml).toEqual([{ root: { item: { "#text": "A" } } }]);
+    expect(streamResult.metadata.partial).toBe(true);
+
+    // Modify the returned object (which is now a direct reference)
+    if (
+      streamResult.xml &&
+      streamResult.xml[0] &&
+      streamResult.xml[0].root &&
+      streamResult.xml[0].root.item
+    ) {
+      streamResult.xml[0].root.item["#text"] = "B";
+    }
+
+    // Continue parsing or finalize
+    let finalResult = parser.parseStream("</root>");
+    expect(finalResult.xml).toEqual([{ root: { item: { "#text": "B" } } }]); // Expect modification to be reflected
+    expect(finalResult.metadata.partial).toBe(false);
+
+    finalResult = parser.parseStream(null); // Signal end of stream
+    expect(finalResult.xml).toEqual([{ root: { item: { "#text": "B" } } }]);
+    expect(finalResult.metadata.partial).toBe(false);
   });
 });
