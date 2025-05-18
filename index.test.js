@@ -180,14 +180,14 @@ describe('PartialXMLStreamParser', () => {
 
     it('should handle unterminated DOCTYPE', () => {
         let streamResult = parser.parseStream('<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"');
-        expect(streamResult).toEqual({ _partial: false });
+        expect(streamResult).toEqual({ _partial: true });
         streamResult = parser.parseStream(null);
         expect(streamResult).toEqual({ _partial: false });
     });
 
     it('should handle unterminated XML declaration', () => {
         let streamResult = parser.parseStream('<?xml version="1.0" encoding="UTF-8"');
-        expect(streamResult).toEqual({ _partial: false });
+        expect(streamResult).toEqual({ _partial: true });
         streamResult = parser.parseStream(null);
         expect(streamResult).toEqual({ _partial: false });
     });
