@@ -1240,6 +1240,46 @@ describe("PartialXMLStreamParser", () => {
     });
   });
 
+  it("should handle input with only text content (no XML tags), including whitespace-only", () => {
+    parser = new PartialXMLStreamParser(); // Fresh parser
+
+    // Test with regular text and surrounding whitespace
+    let textOnlyInput = "  Some plain text here.  ";
+    let streamResult = parser.parseStream(textOnlyInput);
+    expect(streamResult).toEqual({
+      metadata: { partial: false },
+      xml: [textOnlyInput],
+    });
+    streamResult = parser.parseStream(null);
+    expect(streamResult).toEqual({
+      metadata: { partial: false },
+      xml: [textOnlyInput],
+    });
+
+    parser.reset(); // Reset for the next sub-test
+
+    // Test with whitespace-only text
+    let whitespaceOnlyInput = "   \t  \n  ";
+    streamResult = parser.parseStream(whitespaceOnlyInput);
+    expect(streamResult).toEqual({
+      metadata: { partial: false },
+      xml: [],
+    });
+    streamResult = parser.parseStream(null);
+    expect(streamResult).toEqual({
+      metadata: { partial: false },
+      xml: null,
+    });
+
+    parser.reset();
+
+    // Test with empty string input then null
+    streamResult = parser.parseStream("");
+    expect(streamResult).toEqual({ metadata: { partial: true }, xml: null }); // Empty string is initially partial, no content
+    streamResult = parser.parseStream(null);
+    expect(streamResult).toEqual({ metadata: { partial: false }, xml: null }); // Ends as null if only empty string was passed
+  });
+
   it("should handle complex nested structure with attributes and mixed content (alwaysCreateTextNode: true, whitespace omitted)", () => {
     parser = new PartialXMLStreamParser({
       attributeNamePrefix: "@",

@@ -1,4 +1,5 @@
 # Partial XML Stream Parser
+
 [![npm version](https://badge.fury.io/js/partial-xml-stream-parser.svg)](https://badge.fury.io/js/partial-xml-stream-parser)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/USERNAME/REPOSITORY/actions) <!-- Replace USERNAME/REPOSITORY with actual GitHub repo -->
@@ -12,7 +13,7 @@ A lenient, streaming XML parser for Node.js. This parser is designed to handle X
 - **Lenient**: Attempts to parse malformed or incomplete XML.
 - **Object Output**: Converts XML to a JavaScript object structure.
 - **Attribute Handling**: Parses XML attributes with a configurable prefix.
-- **Text Node Handling**: Manages text content within tags. By default, text content is always placed in a specified text node (e.g., `"#text"`).
+- **Text Node Handling**: Manages text content within tags. Text content is always placed in a specified text node (e.g., `"#text"`), as `alwaysCreateTextNode` defaults to `true`.
 - **Entity Decoding**: Decodes basic XML entities (`<`, `>`, `&`, `"`, `'`) and numeric entities.
 - **CDATA Support**: Properly handles CDATA sections.
 - **Stop Nodes**: Ability to specify tags whose content should not be parsed.
@@ -47,17 +48,15 @@ llmStream.forEach((chunk) => {
     console.log("--- Partial LLM XML ---");
     console.log(JSON.stringify(result.xml, null, 2));
     // Example access, assuming result.xml is an array with one root object
+    // With alwaysCreateTextNode: true (default), structure is consistent:
+    // responseObj.status will be { "#text": "thinking" } or { "#text": "partial" }
+    // responseObj.data.item will be an array of objects like { "@id": "1", "#text": "..." }
     const responseObj = result.xml[0].response;
-    if (
-      responseObj &&
-      responseObj.data &&
-      responseObj.data.item
-    ) {
+    if (responseObj && responseObj.data && responseObj.data.item) {
       const items = Array.isArray(responseObj.data.item)
         ? responseObj.data.item
         : [responseObj.data.item];
       items.forEach((item) => {
-        // item will be like { "@id": "1", "#text": "..." }
         if (item["#text"] && item["#text"].includes("still processing...")) {
           console.log(`Item ${item["@id"]} is still processing.`);
         }
@@ -69,8 +68,75 @@ llmStream.forEach((chunk) => {
 const finalResult = parser.parseStream(null); // Signal end of stream
 console.log("--- Final LLM XML ---");
 console.log(JSON.stringify(finalResult.xml, null, 2));
-// Expected final output would show items with "#text" nodes
-// e.g., "item": [ { "@id": "1", "#text": "First part of data..." }, ... ]
+// Expected final output would show items with "#text" nodes, e.g.,
+// "item": [ { "@id": "1", "#text": "First part of data..." }, { "@id": "2", "#text": "Second part, still thinking... still processing..." } ]
+// "status": [ { "#text": "thinking" }, { "#text": "partial" } ]
+```
+### Handling Plain Text Input (No XML Tags)
+
+The parser is also capable of handling input streams that do not contain any XML tags, essentially treating them as plain text. This can be useful in scenarios where the input might sometimes be XML and sometimes just text, or if you need to process raw text through the same pipeline.
+
+- **Non-Whitespace Text**: If the input chunk is plain text (and not just whitespace), it will be returned as a string element in the `xml` array in the result. Any leading/trailing whitespace in the input string will be preserved.
+- **Whitespace-Only Text**: If the input chunk consists solely of whitespace, it is typically ignored, and the `xml` array will be empty (or `null` if it's the only content and the stream ends).
+- **Empty String Input**: Passing an empty string `""` indicates an empty chunk but not the end of the stream; `metadata.partial` will be `true` and `xml` will be `null` until more data or `null` is passed.
+
+```javascript
+const parser = new PartialXMLStreamParser();
+
+// Example 1: Input with non-whitespace text
+let result1 = parser.parseStream("  This is some plain text.  ");
+console.log("--- Plain Text Input ---");
+console.log(JSON.stringify(result1, null, 2));
+// Output:
+// {
+//   "metadata": { "partial": false },
+//   "xml": [ "  This is some plain text.  " ]
+// }
+result1 = parser.parseStream(null); // End stream
+console.log(JSON.stringify(result1, null, 2));
+// Output (remains the same after null if no new data):
+// {
+//   "metadata": { "partial": false },
+//   "xml": [ "  This is some plain text.  " ]
+// }
+
+parser.reset();
+
+// Example 2: Input with only whitespace
+let result2 = parser.parseStream("   \t  \n  ");
+console.log("--- Whitespace-Only Input ---");
+console.log(JSON.stringify(result2, null, 2));
+// Output:
+// {
+//   "metadata": { "partial": false },
+//   "xml": []
+// }
+result2 = parser.parseStream(null); // End stream
+console.log(JSON.stringify(result2, null, 2));
+// Output (xml becomes null if only whitespace was processed and stream ends):
+// {
+//   "metadata": { "partial": false },
+//   "xml": null
+// }
+
+parser.reset();
+
+// Example 3: Empty string input
+let result3 = parser.parseStream("");
+console.log("--- Empty String Input ---");
+console.log(JSON.stringify(result3, null, 2));
+// Output:
+// {
+//   "metadata": { "partial": true },
+//   "xml": null
+// }
+result3 = parser.parseStream(null); // End stream
+console.log(JSON.stringify(result3, null, 2));
+// Output (xml remains null if only empty string was passed):
+// {
+//   "metadata": { "partial": false },
+//   "xml": null
+// }
 ```
 
 ## Installation
@@ -91,7 +157,9 @@ const PartialXMLStreamParser = require("partial-xml-stream-parser");
 const parser = new PartialXMLStreamParser({
   textNodeName: "#text", // Default is "#text"
   attributeNamePrefix: "@", // Default is "@"
-  // alwaysCreateTextNode: true is the default
+  alwaysCreateTextNode: true, // Default is true
+  // parsePrimitives: false, // Default is false
+  // stopNodes: [], // Default is empty
 });
 
 let result;
@@ -145,7 +213,8 @@ console.log(JSON.stringify(result, null, 2));
 //     {
 //       "root": {
 //         "item": {
-//           "#text": "Test" // alwaysCreateTextNode is true by default
+//           "@id": "1", // Attributes are preserved
+//           "#text": "Test"
 //         }
 //       }
 //     }
@@ -163,6 +232,7 @@ console.log(JSON.stringify(result, null, 2));
 //     {
 //       "root": {
 //         "item": {
+//           "@id": "1",
 //           "#text": "Test"
 //         }
 //       }
@@ -225,11 +295,11 @@ console.log(JSON.stringify(result, null, 2));
 //   "xml": [
 //     {
 //       "data": {
-//         "number": { // alwaysCreateTextNode is true by default
-//           "#text": 42
+//         "number": {
+//           "#text": 42 // alwaysCreateTextNode is true by default
 //         },
-//         "boolean": { // alwaysCreateTextNode is true by default
-//           "#text": true
+//         "boolean": {
+//           "#text": true // alwaysCreateTextNode is true by default
 //         }
 //       }
 //     }
@@ -237,32 +307,34 @@ console.log(JSON.stringify(result, null, 2));
 // }
 ```
 
-#### Always Create Text Node
+#### `alwaysCreateTextNode` (Default: `true`)
 
-The `alwaysCreateTextNode` option is `true` by default. This ensures text content is always in a text node (e.g., `"#text"`), even for elements that only contain text.
+The `alwaysCreateTextNode` option is `true` by default. This ensures text content is always placed in a text node (e.g., `"#text"` as per `textNodeName`), even for elements that only contain text or are mixed with attributes. This provides a consistent structure for accessing text.
+
+If you were to set `alwaysCreateTextNode: false` (not the default), the parser would simplify text-only elements:
 
 ```javascript
-const parser = new PartialXMLStreamParser({
-  // alwaysCreateTextNode: true, // This is the default
-  textNodeName: "#myText", // Example of customizing the text node name
+// Example with alwaysCreateTextNode: false (NOT THE DEFAULT)
+const parserOldBehavior = new PartialXMLStreamParser({
+  alwaysCreateTextNode: false,
+  textNodeName: "#text",
 });
-
-const result = parser.parseStream("<root><item>text</item></root>");
-console.log(JSON.stringify(result, null, 2));
-// Output:
+const resultOld = parserOldBehavior.parseStream("<root><item>text</item></root>");
+console.log(JSON.stringify(resultOld, null, 2));
+// Output (if alwaysCreateTextNode were false):
 // {
-//   "metadata": {
-//     "partial": false
-//   },
-//   "xml": [
-//     {
-//       "root": {
-//         "item": {
-//           "#myText": "text"
-//         }
-//       }
-//     }
-//   ]
+//   "metadata": { "partial": false },
+//   "xml": [ { "root": { "item": "text" } } ]
+// }
+
+// Default behavior (alwaysCreateTextNode: true):
+const parserDefault = new PartialXMLStreamParser({ textNodeName: "#myText" });
+const resultDefault = parserDefault.parseStream("<root><item>text</item></root>");
+console.log(JSON.stringify(resultDefault, null, 2));
+// Output (default behavior):
+// {
+//   "metadata": { "partial": false },
+//   "xml": [ { "root": { "item": { "#myText": "text" } } } ]
 // }
 ```
 
@@ -305,15 +377,14 @@ Resets the parser state, allowing it to be reused for parsing a new XML stream.
 
 ### Text Nodes
 
-- By default (`alwaysCreateTextNode: true`), text content is always placed within a property named by `textNodeName` (e.g., `"#text"`).
-- Elements with attributes and text content will have the text in the `textNodeName` property.
-- Elements with child elements and text content will also have their direct text segments in the `textNodeName` property.
-- Whitespace-only text nodes between elements are generally ignored.
+- With `alwaysCreateTextNode: true` (the default), text content is consistently placed within a property named by `textNodeName` (e.g., `"#text"`).
+- This applies to elements that are text-only, elements with attributes and text, and elements with mixed content (child elements and text).
+- Whitespace-only text nodes that appear between elements are generally ignored and do not create a `textNodeName` property.
 
 ### Multiple Occurrences
 
 - If the same tag appears multiple times as a child of the same parent, they are automatically collected into an array under that tag name.
-- If a tag has multiple distinct text segments (e.g., interspersed with child elements), these text segments are typically collected into an array under the `textNodeName` property if `alwaysCreateTextNode` is true. Adjacent text segments are concatenated.
+- If a tag has multiple distinct text segments (e.g., interspersed with child elements), these text segments are collected under the `textNodeName` property. If `alwaysCreateTextNode` is true, adjacent text segments are concatenated into a single string value for that `textNodeName`; if there are intervening non-text children, multiple text segments might result in an array of strings under `textNodeName` if the logic for `addValueToObject` determines it (though current behavior aims to concatenate).
 
 ### Special XML Structures
 

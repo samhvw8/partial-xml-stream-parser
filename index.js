@@ -32,23 +32,28 @@ const addValueToObject = (
   const alwaysCreate = customOptions.alwaysCreateTextNode; // Directly use from merged options
 
   if (obj.hasOwnProperty(key)) {
-    if (alwaysCreate) { // Path for alwaysCreateTextNode = true
-      if (key === effectiveTextNodeName) { // Special handling for text nodes
+    if (alwaysCreate) {
+      // Path for alwaysCreateTextNode = true
+      if (key === effectiveTextNodeName) {
+        // Special handling for text nodes
         if (typeof obj[key] === "string" && typeof value === "string") {
           obj[key] += value; // Concatenate text
-        } else { // Mixed content or multiple distinct text segments
+        } else {
+          // Mixed content or multiple distinct text segments
           if (!Array.isArray(obj[key])) {
             obj[key] = [obj[key]];
           }
           obj[key].push(value);
         }
-      } else { // For non-text nodes (child elements)
+      } else {
+        // For non-text nodes (child elements)
         if (!Array.isArray(obj[key])) {
           obj[key] = [obj[key]];
         }
         obj[key].push(value);
       }
-    } else { // Path for alwaysCreateTextNode = false
+    } else {
+      // Path for alwaysCreateTextNode = false
       if (
         key === effectiveTextNodeName && // Was textNodeNameForConcat
         typeof obj[key] === "string" &&
@@ -56,7 +61,8 @@ const addValueToObject = (
       ) {
         // Concatenate for textNodeName if types match
         obj[key] += value;
-      } else { // General case: turn into array or push to existing array
+      } else {
+        // General case: turn into array or push to existing array
         if (!Array.isArray(obj[key])) {
           obj[key] = [obj[key]];
         }
@@ -398,7 +404,8 @@ class PartialXMLStreamParser {
 
         const charAfterLT = buffer[i + 1]; // Already checked: i + 1 < len
 
-        if (charAfterLT === '?') { // Potential <?xml
+        if (charAfterLT === "?") {
+          // Potential <?xml
           if (buffer.startsWith("<?xml", i)) {
             const endDeclaration = buffer.indexOf("?>", i + 5); // "<?xml".length is 5
             if (endDeclaration === -1) {
@@ -415,9 +422,10 @@ class PartialXMLStreamParser {
             matchedSpecialPrefix = true;
             this.incompleteStructureState = null;
           }
-        } else if (charAfterLT === '!') { // Potential comment, CDATA, DOCTYPE
+        } else if (charAfterLT === "!") {
+          // Potential comment, CDATA, DOCTYPE
           // Check for <!-- (comment)
-          if (i + 3 < len && buffer[i + 2] === '-' && buffer[i + 3] === '-') {
+          if (i + 3 < len && buffer[i + 2] === "-" && buffer[i + 3] === "-") {
             // No need for buffer.startsWith("<!--", i) if char checks are sufficient,
             // but keeping it for safety/clarity or if `startsWith` is highly optimized.
             // Assuming it's "<!--"
@@ -438,7 +446,8 @@ class PartialXMLStreamParser {
           }
           // Check for <![CDATA[
           // Needs to be checked before <!DOCTYPE because <!D also starts with <!
-          else if (buffer.startsWith("<![CDATA[", i)) { // "<![CDATA[".length is 9
+          else if (buffer.startsWith("<![CDATA[", i)) {
+            // "<![CDATA[".length is 9
             const cdataOpenTagEnd = i + 9;
             const cdataCloseMarker = "]]>";
             const cdataEnd = buffer.indexOf(cdataCloseMarker, cdataOpenTagEnd);
@@ -496,7 +505,8 @@ class PartialXMLStreamParser {
             matchedSpecialPrefix = true;
           }
           // Check for <!DOCTYPE
-          else if (buffer.startsWith("<!DOCTYPE", i)) { // "<!DOCTYPE ".length is 10 (or 9 for just "<!DOCTYPE")
+          else if (buffer.startsWith("<!DOCTYPE", i)) {
+            // "<!DOCTYPE ".length is 10 (or 9 for just "<!DOCTYPE")
             const endDoctype = buffer.indexOf(">", i + 9); // Assuming min length of <!DOCTYPE is 9
             if (endDoctype === -1) {
               this.incompleteStructureState = {
@@ -811,6 +821,7 @@ class PartialXMLStreamParser {
         if (rawText.length > 0) {
           const decodedText = this._decodeXmlEntities(rawText);
           if (decodedText.trim().length > 0) {
+            // Only add if it's not whitespace-only
             let processedContent = this.customOptions.parsePrimitives
               ? this._tryParsePrimitive(decodedText)
               : decodedText;
@@ -936,6 +947,7 @@ class PartialXMLStreamParser {
     if (textToProcessAsContent.length > 0) {
       const decodedText = this._decodeXmlEntities(textToProcessAsContent);
       if (decodedText.trim().length > 0) {
+        // Only add if it's not whitespace-only
         let processedContent = this.customOptions.parsePrimitives
           ? this._tryParsePrimitive(decodedText)
           : decodedText;
