@@ -598,6 +598,46 @@ describe("PartialXMLStreamParser", () => {
     });
   });
 
+  it("should set partial:true when stream ends with an incomplete tag", () => {
+    parser = new PartialXMLStreamParser({ textNodeName: "#text" });
+    let streamResult = parser.parseStream("<root><incompleteTag");
+    streamResult = parser.parseStream(null); // End stream
+    expect(streamResult).toEqual({
+      metadata: { partial: true },
+      xml: [{ root: { "#text": "<incompleteTag" } }], // The fragment is treated as text of parent
+    });
+
+    parser.reset();
+    parser = new PartialXMLStreamParser({ textNodeName: "#text" });
+    streamResult = parser.parseStream("<root><item>Text</item></incompleteCl");
+    streamResult = parser.parseStream(null); // End stream
+    expect(streamResult).toEqual({
+      metadata: { partial: true },
+      xml: [{ root: { item: { "#text": "Text" }, "#text": "</incompleteCl" } }], // Fragment as text
+    });
+    
+    parser.reset();
+    parser = new PartialXMLStreamParser({ textNodeName: "#text" });
+    streamResult = parser.parseStream("<root><item>Text</item><"); // Just '<'
+    streamResult = parser.parseStream(null); // End stream
+    expect(streamResult).toEqual({
+      metadata: { partial: true },
+      xml: [{ root: { item: { "#text": "Text" }, "#text": "<" } }], // Fragment as text
+    });
+
+    parser.reset();
+    parser = new PartialXMLStreamParser({ textNodeName: "#text" });
+    streamResult = parser.parseStream("<root attr='val");
+    streamResult = parser.parseStream(null); // End stream
+    expect(streamResult).toEqual({
+      metadata: { partial: true },
+      // Depending on how strictly attributes are parsed before '>',
+      // this might be an empty root or root with partial text.
+      // Current behavior treats "<root attr='val" as text if not closed by ">"
+      xml: [{ "#text": "<root attr='val" }],
+    });
+  });
+
   describe("stopNodes feature", () => {
     it("should treat content of a stopNode as text", () => {
       parser = new PartialXMLStreamParser({

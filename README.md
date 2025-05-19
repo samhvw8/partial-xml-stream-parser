@@ -398,7 +398,7 @@ Resets the parser state, allowing it to be reused for parsing a new XML stream.
 
 The parser attempts to handle various imperfect XML scenarios:
 
-- Incomplete tags (fragments at the end of a chunk are carried over)
+- **Incomplete tags**: Fragments at the end of a chunk are carried over. If the stream ends (is `null`-terminated) with an incomplete tag (e.g., `<tag` or `</tag`), this fragment is generally treated as text content of its last open parent element. The `metadata.partial` flag will be `true` in such EOF scenarios to indicate the input ended with an unclosed structure treated as text.
 - Malformed tags (may be treated as text)
 - Unterminated CDATA sections (content parsed up to the end of chunk, marked as partial)
 - Unterminated comments, DOCTYPEs, XML declarations (ignored if unterminated at stream end)
