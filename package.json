@@ -1,9 +1,14 @@
 {
   "name": "partial-xml-stream-parser",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "A lenient XML stream parser that can handle incomplete or malformed XML data, with support for conditional root node parsing.",
   "main": "index.js",
   "types": "index.d.ts",
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "src/"
+  ],
   "scripts": {
     "test": "CI=true vitest",
     "bench": "vitest bench"
