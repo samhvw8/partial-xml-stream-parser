@@ -25,44 +25,36 @@ const addValueToObject = (
   obj,
   key,
   value,
-  // textNodeNameForConcat, // This parameter is effectively customOptions.textNodeName
   customOptions,
 ) => {
-  const effectiveTextNodeName = customOptions.textNodeName; // Directly use from merged options
-  const alwaysCreate = customOptions.alwaysCreateTextNode; // Directly use from merged options
+  const effectiveTextNodeName = customOptions.textNodeName;
+  const alwaysCreate = customOptions.alwaysCreateTextNode;
 
   if (obj.hasOwnProperty(key)) {
     if (alwaysCreate) {
-      // Path for alwaysCreateTextNode = true
       if (key === effectiveTextNodeName) {
-        // Special handling for text nodes
         if (typeof obj[key] === "string" && typeof value === "string") {
-          obj[key] += value; // Concatenate text
+          obj[key] += value;
         } else {
-          // Mixed content or multiple distinct text segments
           if (!Array.isArray(obj[key])) {
             obj[key] = [obj[key]];
           }
           obj[key].push(value);
         }
       } else {
-        // For non-text nodes (child elements)
         if (!Array.isArray(obj[key])) {
           obj[key] = [obj[key]];
         }
         obj[key].push(value);
       }
     } else {
-      // Path for alwaysCreateTextNode = false
       if (
-        key === effectiveTextNodeName && // Was textNodeNameForConcat
+        key === effectiveTextNodeName &&
         typeof obj[key] === "string" &&
         typeof value === "string"
       ) {
-        // Concatenate for textNodeName if types match
         obj[key] += value;
       } else {
-        // General case: turn into array or push to existing array
         if (!Array.isArray(obj[key])) {
           obj[key] = [obj[key]];
         }
@@ -70,10 +62,6 @@ const addValueToObject = (
       }
     }
   } else {
-    // Key doesn't exist yet.
-    // If alwaysCreate is true, and it's the textNodeName, it's just the value.
-    // If alwaysCreate is false, it's also just the value.
-    // The distinction for alwaysCreate matters more when the key *exists*.
     obj[key] = value;
   }
 };
@@ -83,20 +71,27 @@ class PartialXMLStreamParser {
     const mergedOptions = { ...DEFAULT_STREAM_OPTIONS, ...options };
     this.customOptions = mergedOptions;
 
-    this.attrRegex = /([\w:-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s/>]+)))?/g;
-    // Regexes for special constructs - these are still useful for quick checks and full parsing of these constructs
-    this.commentRegex = /<!--/g; // Used to find the start
-    this.cdataOpenRegex = /<!\[CDATA\[/g; // Used to find the start
-    this.doctypeRegex = /<!DOCTYPE/g; // Used to find the start
-    this.xmlDeclRegex = /<\?xml/g; // Used to find the start
+    if (mergedOptions.allowedRootNodes) {
+      if (Array.isArray(mergedOptions.allowedRootNodes) && mergedOptions.allowedRootNodes.length > 0) {
+        this.allowedRootNodes = new Set(mergedOptions.allowedRootNodes);
+      } else if (typeof mergedOptions.allowedRootNodes === 'string') {
+        this.allowedRootNodes = new Set([mergedOptions.allowedRootNodes]);
+      } else if (Array.isArray(mergedOptions.allowedRootNodes) && mergedOptions.allowedRootNodes.length === 0) {
+        this.allowedRootNodes = null; // Empty array means parse all as XML
+      } else {
+        this.allowedRootNodes = null; // Default to no restrictions
+      }
+    } else {
+      this.allowedRootNodes = null; // No restrictions
+    }
 
-    // Global regexes for opening/closing tags are removed as they are replaced by static ones on substrings
-    // this.closingTagRegex = /<\/\s*([\w:-]+)\s*>/g;
-    // this.openingTagRegex =
-    //   /<\s*([\w:-]+)((?:\s+[\w:-]+(?:=(?:"[^"]*"|'[^']*'|[^\s/>]+))?)*\s*)?(\/?)\>/g;
+    this.attrRegex = /([\w:-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s/>]+)))?/g;
+    this.commentRegex = /<!--/g;
+    this.cdataOpenRegex = /<!\[CDATA\[/g;
+    this.doctypeRegex = /<!DOCTYPE/g;
+    this.xmlDeclRegex = /<\?xml/g;
 
     this.stopNodeRegexCache = {};
-
     this.simpleStopNodes = new Set();
     this.pathStopNodes = new Set();
 
@@ -126,9 +121,14 @@ class PartialXMLStreamParser {
     this.parsingIndex = 0;
     this.incompleteStructureState = null;
     this.reparsedSegmentContext = null;
-    this.streamingBufferBeforeClear = ""; // For final null check
-    this._originalBufferHadContent = false; // For final null check
-    this._lastClearedIncompleteStateWasSpecial = false; // Initialize flag
+    this.streamingBufferBeforeClear = "";
+    this._originalBufferHadContent = false;
+    this._lastClearedIncompleteStateWasSpecial = false;
+
+    this._rootDeterminationBuffer = "";
+    this._plainTextAccumulator = "";
+    this._treatAsPlainText = false;
+    this._rootTagDecisionMade = false;
   }
 
   _decodeXmlEntities(text) {
@@ -149,11 +149,10 @@ class PartialXMLStreamParser {
   _tryParsePrimitive(value) {
     if (typeof value !== "string") return value;
     const lowerVal = value.toLowerCase();
-    // Only convert if the string is exactly "true" or "false"
     if (value === "true") return true;
     if (value === "false") return false;
-    if (lowerVal === "true" && value.length === 4) return true; // case-insensitive exact match
-    if (lowerVal === "false" && value.length === 5) return false; // case-insensitive exact match
+    if (lowerVal === "true" && value.length === 4) return true;
+    if (lowerVal === "false" && value.length === 5) return false;
 
     const trimmedValueForCheck = value.trim();
     if (
@@ -162,7 +161,6 @@ class PartialXMLStreamParser {
     ) {
       const num = Number(trimmedValueForCheck);
       if (String(num) === trimmedValueForCheck) {
-        // Ensure no trailing characters like "123a"
         return num;
       }
     }
@@ -233,16 +231,16 @@ class PartialXMLStreamParser {
               this.parsingIndex,
               endIdx,
             );
-            if (newContentSegment.trim().length > 0) {
+            const fullContent = (state.partialData || "") + newContentSegment;
+            if (fullContent.length > 0) { 
               let textToAdd = this.customOptions.parsePrimitives
-                ? this._tryParsePrimitive(newContentSegment)
-                : newContentSegment;
+                ? this._tryParsePrimitive(fullContent)
+                : fullContent;
               if (this.tagStack.length > 0 && this.currentPointer) {
                 addValueToObject(
                   this.currentPointer,
                   textNodeName,
                   textToAdd,
-                  // textNodeName, // Removed parameter
                   this.customOptions,
                 );
               } else if (this.tagStack.length === 0) {
@@ -253,25 +251,10 @@ class PartialXMLStreamParser {
             this.incompleteStructureState = null;
           } else {
             const newPartialContent = buffer.substring(this.parsingIndex, len);
-            if (newPartialContent.trim().length > 0) {
-              let textToAdd = this.customOptions.parsePrimitives
-                ? this._tryParsePrimitive(newPartialContent)
-                : newPartialContent;
+            if (newPartialContent.length > 0) {
+              state.partialData = (state.partialData || "") + newPartialContent;
               if (this.tagStack.length > 0 && this.currentPointer) {
-                addValueToObject(
-                  this.currentPointer,
-                  textNodeName,
-                  textToAdd,
-                  // textNodeName, // Removed parameter
-                  this.customOptions,
-                );
-              } else if (
-                this.tagStack.length === 0 &&
-                state.at === 0 &&
-                this.accumulator.length === 0
-              ) {
-                // Only add to accumulator if it's truly root CDATA
-                this.accumulator.push(textToAdd);
+                addValueToObject(this.currentPointer, textNodeName, newPartialContent, this.customOptions);
               }
             }
             this.parsingIndex = len;
@@ -313,7 +296,6 @@ class PartialXMLStreamParser {
           let {
             tagName: stopNodeTagName,
             depth: stopNodeDepth,
-            // contentStartIndex: stopNodeContentStartIndex, // Not directly used here after state restore
             stopNodeObjectRef,
           } = state;
           let currentSearchPos = this.parsingIndex;
@@ -350,34 +332,29 @@ class PartialXMLStreamParser {
 
           if (rawContentEnd !== -1) {
             const newContentSegment = buffer.substring(
-              this.parsingIndex, // Continue from where we left off in the buffer
+              this.parsingIndex,
               rawContentEnd,
             );
-            // state.stopNodeObjectRef should already have prior content if any
             addValueToObject(
               stopNodeObjectRef,
               textNodeName,
               newContentSegment,
-              // textNodeName, // Removed parameter
               this.customOptions,
             );
             this.parsingIndex = rawContentEnd + closingTagLength;
             this.incompleteStructureState = null;
           } else {
-            // More content for the stop node, but no closing tag found yet in this chunk
             const newPartialContent = buffer.substring(this.parsingIndex, len);
             if (newPartialContent.length > 0) {
               addValueToObject(
                 stopNodeObjectRef,
                 textNodeName,
                 newPartialContent,
-                // textNodeName, // Removed parameter
                 this.customOptions,
               );
             }
             this.parsingIndex = len;
-            // Keep incompleteStructureState as is, but update its content
-            this.incompleteStructureState.depth = stopNodeDepth; // Update depth
+            this.incompleteStructureState.depth = stopNodeDepth;
             return;
           }
           break;
@@ -395,19 +372,16 @@ class PartialXMLStreamParser {
             at: i,
             partial: "<",
           };
-          this.parsingIndex = len; // Consume the '<'
+          this.parsingIndex = len;
           return;
         }
 
         let matchedSpecialPrefix = false;
-        // Removed regexMatch variable as it's not used with startsWith logic for these prefixes
-
-        const charAfterLT = buffer[i + 1]; // Already checked: i + 1 < len
+        const charAfterLT = buffer[i + 1];
 
         if (charAfterLT === "?") {
-          // Potential <?xml
           if (buffer.startsWith("<?xml", i)) {
-            const endDeclaration = buffer.indexOf("?>", i + 5); // "<?xml".length is 5
+            const endDeclaration = buffer.indexOf("?>", i + 5);
             if (endDeclaration === -1) {
               this.incompleteStructureState = {
                 type: "xmldecl",
@@ -423,13 +397,8 @@ class PartialXMLStreamParser {
             this.incompleteStructureState = null;
           }
         } else if (charAfterLT === "!") {
-          // Potential comment, CDATA, DOCTYPE
-          // Check for <!-- (comment)
-          if (i + 3 < len && buffer[i + 2] === "-" && buffer[i + 3] === "-") {
-            // No need for buffer.startsWith("<!--", i) if char checks are sufficient,
-            // but keeping it for safety/clarity or if `startsWith` is highly optimized.
-            // Assuming it's "<!--"
-            const commentEnd = buffer.indexOf("-->", i + 4); // "<!--".length is 4
+          if (i + 3 < len && buffer[i + 2] === "-" && buffer[i + 3] === "-") { // <!--
+            const commentEnd = buffer.indexOf("-->", i + 4);
             if (commentEnd === -1) {
               this.incompleteStructureState = {
                 type: "comment",
@@ -444,36 +413,26 @@ class PartialXMLStreamParser {
             matchedSpecialPrefix = true;
             this.incompleteStructureState = null;
           }
-          // Check for <![CDATA[
-          // Needs to be checked before <!DOCTYPE because <!D also starts with <!
           else if (buffer.startsWith("<![CDATA[", i)) {
-            // "<![CDATA[".length is 9
             const cdataOpenTagEnd = i + 9;
             const cdataCloseMarker = "]]>";
             const cdataEnd = buffer.indexOf(cdataCloseMarker, cdataOpenTagEnd);
             if (cdataEnd === -1) {
               const partialContent = buffer.substring(cdataOpenTagEnd, len);
-              if (partialContent.trim().length > 0) {
-                let textToAdd = this.customOptions.parsePrimitives
-                  ? this._tryParsePrimitive(partialContent)
-                  : partialContent;
-                if (this.tagStack.length > 0 && this.currentPointer) {
-                  addValueToObject(
-                    this.currentPointer,
-                    textNodeName,
-                    textToAdd,
-                    // textNodeName, // Removed parameter
-                    this.customOptions,
-                  );
-                } else if (this.tagStack.length === 0) {
-                  this.accumulator.push(textToAdd);
-                }
+              if (this.tagStack.length > 0 && this.currentPointer) {
+                  addValueToObject(this.currentPointer, textNodeName, partialContent, this.customOptions);
+              } else if (this.tagStack.length === 0) {
+                  if (!this.incompleteStructureState || this.incompleteStructureState.type !== 'cdata') {
+                      this.accumulator.push(partialContent);
+                  } else { 
+                      this.incompleteStructureState.partialData = (this.incompleteStructureState.partialData || "") + partialContent;
+                  }
               }
               this.incompleteStructureState = {
                 type: "cdata",
                 lookingFor: cdataCloseMarker,
-                at: i,
-                partialData: partialContent,
+                at: i, 
+                partialData: (this.incompleteStructureState?.partialData || "") + partialContent, 
               };
               this.parsingIndex = len;
               return;
@@ -483,31 +442,26 @@ class PartialXMLStreamParser {
               const processedCDATA = this.customOptions.parsePrimitives
                 ? this._tryParsePrimitive(text)
                 : text;
-              if (
-                processedCDATA.trim().length > 0 ||
-                (this.incompleteStructureState?.partialData &&
-                  this.incompleteStructureState.type === "cdata")
-              ) {
+              const fullText = (this.incompleteStructureState?.partialData || "") + processedCDATA;
+
+              if (fullText.length > 0 ) { 
                 if (this.tagStack.length > 0 && this.currentPointer) {
                   addValueToObject(
                     this.currentPointer,
                     textNodeName,
-                    processedCDATA,
-                    // textNodeName, // Removed parameter
+                    fullText,
                     this.customOptions,
                   );
                 } else if (this.tagStack.length === 0) {
-                  this.accumulator.push(processedCDATA);
+                  this.accumulator.push(fullText);
                 }
               }
               this.incompleteStructureState = null;
             }
             matchedSpecialPrefix = true;
           }
-          // Check for <!DOCTYPE
           else if (buffer.startsWith("<!DOCTYPE", i)) {
-            // "<!DOCTYPE ".length is 10 (or 9 for just "<!DOCTYPE")
-            const endDoctype = buffer.indexOf(">", i + 9); // Assuming min length of <!DOCTYPE is 9
+            const endDoctype = buffer.indexOf(">", i + 9);
             if (endDoctype === -1) {
               this.incompleteStructureState = {
                 type: "doctype",
@@ -621,18 +575,15 @@ class PartialXMLStreamParser {
           match = tagString.match(STATIC_OPENING_TAG_REGEX);
           if (match) {
             const tagName = match[1];
-            // Cleanup temporary text if this opening tag completes a previously incomplete fragment
             if (
               this.reparsedSegmentContext &&
               this.reparsedSegmentContext.parentContext &&
               this.reparsedSegmentContext.partialText !== undefined &&
-              // Only cleanup if the current new tag is a child of the parent context of the reparsed fragment
               this.currentPointer === this.reparsedSegmentContext.parentContext
             ) {
-              // Ensure partialText is defined
-              const { partialText, parentContext } = // parentContext here is this.currentPointer
+              const { partialText, parentContext } =
                 this.reparsedSegmentContext;
-              const textNodeNameToUse = this.customOptions.textNodeName; // Use the dynamic textNodeName
+              const textNodeNameToUse = this.customOptions.textNodeName;
 
               if (parentContext.hasOwnProperty(textNodeNameToUse)) {
                 const currentTextNodeValue = parentContext[textNodeNameToUse];
@@ -650,7 +601,6 @@ class PartialXMLStreamParser {
                     }
                   }
                 } else if (Array.isArray(currentTextNodeValue)) {
-                  // Remove the *last* occurrence that strictly equals partialText
                   let foundAndRemoved = false;
                   for (let k = currentTextNodeValue.length - 1; k >= 0; k--) {
                     if (currentTextNodeValue[k] === partialText) {
@@ -665,7 +615,7 @@ class PartialXMLStreamParser {
                 }
               }
             }
-            this.reparsedSegmentContext = null; // Clear after attempting cleanup
+            this.reparsedSegmentContext = null;
 
             const attributesString = (match[2] || "").trim();
             const isSelfClosing = match[3] === "/";
@@ -694,7 +644,6 @@ class PartialXMLStreamParser {
                   this.currentPointer,
                   tagName,
                   stopNodeObject,
-                  // undefined, // Removed parameter
                   this.customOptions,
                 );
               }
@@ -741,7 +690,6 @@ class PartialXMLStreamParser {
                   stopNodeObject,
                   textNodeName,
                   rawContent,
-                  // textNodeName, // Removed parameter
                   this.customOptions,
                 );
                 this.parsingIndex = rawContentEnd + closingTagLengthVal;
@@ -755,7 +703,6 @@ class PartialXMLStreamParser {
                   stopNodeObject,
                   textNodeName,
                   newPartialContent,
-                  // textNodeName, // Removed parameter
                   this.customOptions,
                 );
                 this.incompleteStructureState = {
@@ -791,7 +738,6 @@ class PartialXMLStreamParser {
                   this.currentPointer,
                   tagName,
                   newObjShell,
-                  // undefined, // Removed parameter
                   this.customOptions,
                 );
                 if (!isSelfClosing) {
@@ -815,15 +761,14 @@ class PartialXMLStreamParser {
             );
           }
         }
-      } else {
+      } else { // Not starting with '<'
         let textEnd = buffer.indexOf("<", i);
         if (textEnd === -1) textEnd = len;
         const rawText = buffer.substring(i, textEnd);
 
         if (rawText.length > 0) {
           const decodedText = this._decodeXmlEntities(rawText);
-          if (decodedText.trim().length > 0) {
-            // Only add if it's not whitespace-only
+          if (decodedText.trim().length > 0) { 
             let processedContent = this.customOptions.parsePrimitives
               ? this._tryParsePrimitive(decodedText)
               : decodedText;
@@ -835,10 +780,9 @@ class PartialXMLStreamParser {
                 this.currentPointer,
                 textNodeName,
                 processedContent,
-                // textNodeName, // Removed parameter
                 this.customOptions,
               );
-            } else if (this.tagStack.length === 0) {
+            } else if (this.tagStack.length === 0) { 
               this.accumulator.push(processedContent);
             }
           }
@@ -855,11 +799,10 @@ class PartialXMLStreamParser {
 
     const fullFallbackText = buffer.substring(startIndex, endOfProblematicText);
     let textToProcessAsContent = fullFallbackText;
-    let incompleteTagFragment = null; // Keep track of the fragment if it's identified as incomplete
+    let incompleteTagFragment = null;
 
-    this.incompleteStructureState = null; // Reset by default
+    this.incompleteStructureState = null;
 
-    // Only consider it an incomplete tag if it's at the very end of the current buffer processing window
     if (
       endOfProblematicText === buffer.length &&
       fullFallbackText.startsWith("<")
@@ -873,7 +816,6 @@ class PartialXMLStreamParser {
         };
       } else if (fullFallbackText.startsWith("</")) {
         if (fullFallbackText.indexOf(">") === -1) {
-          // e.g. "</foo"
           incompleteTagFragment = fullFallbackText;
           this.incompleteStructureState = {
             type: "closing_tag_incomplete",
@@ -882,7 +824,6 @@ class PartialXMLStreamParser {
           };
         }
       } else if (fullFallbackText.startsWith("<")) {
-        // e.g. "<foo" or "<foo attr"
         const potentialTagNameMatch = fullFallbackText.match(/^<([\w:-]+)/);
         if (potentialTagNameMatch && fullFallbackText.indexOf(">") === -1) {
           incompleteTagFragment = fullFallbackText;
@@ -895,16 +836,10 @@ class PartialXMLStreamParser {
       }
 
       if (this.incompleteStructureState) {
-        textToProcessAsContent = ""; // The fragment itself is not "text to process" in the generic sense.
-        // It's an incomplete tag part.
-
-        // Assign parent context for the incomplete state
+        textToProcessAsContent = "";
         if (this.tagStack.length > 0 && this.currentPointer) {
           this.incompleteStructureState.parentOfPartial = this.currentPointer;
-          // For the current partial result, if a chunk ends with an incomplete tag fragment
-          // and we are inside an open tag, this fragment IS treated as text content of that parent.
-          // This temporary text will be cleaned up by reparsedSegmentContext if the tag completes later.
-          const fragmentText = this.incompleteStructureState.partial; // This is the raw fragment
+          const fragmentText = this.incompleteStructureState.partial;
           if (fragmentText && fragmentText.length > 0) {
             const decodedFragment = this._decodeXmlEntities(fragmentText);
             let processedFragment =
@@ -913,56 +848,43 @@ class PartialXMLStreamParser {
                 ? this._tryParsePrimitive(decodedFragment)
                 : decodedFragment;
             
-            // Set processedPartialForCleanup immediately after fragment is processed.
-            // This is crucial for the reparsedSegmentContext in the *next* chunk.
             this.incompleteStructureState.processedPartialForCleanup = processedFragment;
 
             let skipAddingProvisionalText = false;
             if (
               this.reparsedSegmentContext &&
               this.reparsedSegmentContext.parentContext ===
-                this.incompleteStructureState.parentOfPartial && // parentOfPartial was set from currentPointer
+                this.incompleteStructureState.parentOfPartial &&
               this.reparsedSegmentContext.partialText === processedFragment
             ) {
               skipAddingProvisionalText = true;
             }
 
-            // Only add provisional text if not skipped AND if the parent is an object (not the accumulator array)
             if (!skipAddingProvisionalText && this.incompleteStructureState.parentOfPartial === this.currentPointer) {
               addValueToObject(
-                this.currentPointer, // which is parentOfPartial for this context
+                this.currentPointer,
                 textNodeName,
                 processedFragment,
                 this.customOptions,
               );
-              // Note: processedPartialForCleanup is already set above.
-
               if (
                 this.tagStack.length > 0 &&
                 this.tagStack[this.tagStack.length - 1].objPtr ===
-                  this.currentPointer // which is parentOfPartial
+                  this.currentPointer
               ) {
                 this.tagStack[this.tagStack.length - 1].textOnly = false;
               }
             }
           }
         } else if (this.tagStack.length === 0) {
-          // Incomplete tag at root
           this.incompleteStructureState.parentOfPartial = this.accumulator;
-          // If at root, an incomplete tag fragment is generally not added as text to the accumulator.
-          // No processedPartialForCleanup needed here as text isn't added to accumulator.
         }
       }
     }
-    // If no incompleteStructureState was set (meaning fullFallbackText was not an incomplete tag start),
-    // or if it was set but textToProcessAsContent is now empty,
-    // textToProcessAsContent (which might be the original fullFallbackText or part of it before the fragment)
-    // will be processed below.
 
     if (textToProcessAsContent.length > 0) {
       const decodedText = this._decodeXmlEntities(textToProcessAsContent);
-      if (decodedText.trim().length > 0) {
-        // Only add if it's not whitespace-only
+      if (decodedText.trim().length > 0) { 
         let processedContent = this.customOptions.parsePrimitives
           ? this._tryParsePrimitive(decodedText)
           : decodedText;
@@ -973,7 +895,6 @@ class PartialXMLStreamParser {
             this.currentPointer,
             textNodeName,
             processedContent,
-            // textNodeName, // Removed parameter
             this.customOptions,
           );
         } else if (this.tagStack.length === 0) {
@@ -981,14 +902,13 @@ class PartialXMLStreamParser {
         }
       }
     }
-    // If an incomplete state was set, it remains. Otherwise, it's null.
     return endOfProblematicText;
   }
 
   parseStream(xmlChunk) {
     let currentXmlString = "";
     if (xmlChunk === null || xmlChunk === undefined) {
-      this._activelyStreaming = false;
+      // EOF, specific handling below
     } else if (typeof xmlChunk === "string") {
       currentXmlString = xmlChunk;
     } else if (xmlChunk && typeof xmlChunk.toString === "function") {
@@ -998,31 +918,134 @@ class PartialXMLStreamParser {
         "XML chunk for 'parseStream' is accepted in String, Buffer, null, undefined or empty string form.",
       );
     }
+    
+    const isFirstEverChunk = !this._originalBufferHadContent && this.streamingBuffer === "" && this._rootDeterminationBuffer === "" && this._plainTextAccumulator === "" && this.accumulator.length === 0 && this.tagStack.length === 0;
+    if (!this._originalBufferHadContent && currentXmlString.length > 0) {
+        this._originalBufferHadContent = true;
+    }
 
-    // If there's a pending incomplete fragment from a previous chunk,
-    // prepend it to the current chunk's data before adding to the main buffer.
+    // --- BEGIN Conditional XML Parsing Logic ---
+    if (this._treatAsPlainText) {
+      if (xmlChunk !== null && currentXmlString) {
+        this._plainTextAccumulator += currentXmlString;
+      }
+      const isPartialPlainText = xmlChunk !== null;
+      let resultXml = [];
+      if (this._plainTextAccumulator.length > 0) { 
+        resultXml = [this._plainTextAccumulator];
+      } else if (xmlChunk === null && !this._originalBufferHadContent && this._plainTextAccumulator === "") {
+        resultXml = null;
+      }
+      return { metadata: { partial: isPartialPlainText }, xml: resultXml };
+    }
+
+    if (this.allowedRootNodes && !this._rootTagDecisionMade) {
+      if (currentXmlString) {
+        this._rootDeterminationBuffer += currentXmlString;
+      }
+
+      const bufferToInspect = this._rootDeterminationBuffer;
+      const trimmedBufferForTagCheck = bufferToInspect.trimStart();
+
+      if (trimmedBufferForTagCheck.length > 0) {
+        if (trimmedBufferForTagCheck.startsWith("<")) {
+          const tagMatch = STATIC_OPENING_TAG_REGEX.exec(trimmedBufferForTagCheck);
+          if (tagMatch) { 
+            const rootTagName = tagMatch[1];
+            if (this.allowedRootNodes.has(rootTagName)) {
+              this._rootTagDecisionMade = true;
+              currentXmlString = bufferToInspect; 
+              this.streamingBuffer = ""; 
+              this.parsingIndex = 0;
+              this._rootDeterminationBuffer = "";
+            } else { 
+              this._treatAsPlainText = true;
+              this._rootTagDecisionMade = true;
+              this._plainTextAccumulator = bufferToInspect;
+              this._rootDeterminationBuffer = "";
+              return { metadata: { partial: xmlChunk !== null }, xml: [this._plainTextAccumulator] };
+            }
+          } else { 
+            const partialTagNameMatch = trimmedBufferForTagCheck.match(/^<([\w:-]+)/);
+            if (xmlChunk === null) { 
+                this._treatAsPlainText = true;
+                this._rootTagDecisionMade = true;
+                this._plainTextAccumulator = bufferToInspect;
+                this._rootDeterminationBuffer = "";
+                return { metadata: { partial: false }, xml: [this._plainTextAccumulator] };
+            } else if (partialTagNameMatch) { 
+                const potentialTagName = partialTagNameMatch[1];
+                const isPotentiallyAllowed = [...this.allowedRootNodes].some(ar => ar.startsWith(potentialTagName));
+                const isExactButIncompleteAllowed = this.allowedRootNodes.has(potentialTagName);
+
+                if (isExactButIncompleteAllowed || isPotentiallyAllowed) {
+                    return { metadata: { partial: true }, xml: [] }; 
+                } else { 
+                    this._treatAsPlainText = true;
+                    this._rootTagDecisionMade = true;
+                    this._plainTextAccumulator = bufferToInspect;
+                    this._rootDeterminationBuffer = "";
+                    return { metadata: { partial: true }, xml: [this._plainTextAccumulator] };
+                }
+            } else { 
+                return { metadata: { partial: true }, xml: [] }; 
+            }
+          }
+        } else { 
+          this._treatAsPlainText = true;
+          this._rootTagDecisionMade = true;
+          this._plainTextAccumulator = bufferToInspect; 
+          this._rootDeterminationBuffer = "";
+          return { metadata: { partial: xmlChunk !== null }, xml: [this._plainTextAccumulator] };
+        }
+      } else { 
+        if (xmlChunk === null) { 
+            this._rootTagDecisionMade = true;
+            if (bufferToInspect.length > 0) { 
+                this._treatAsPlainText = true;
+                this._plainTextAccumulator = bufferToInspect;
+                this._rootDeterminationBuffer = "";
+                return { metadata: { partial: false }, xml: [this._plainTextAccumulator] };
+            } else { 
+                this._rootDeterminationBuffer = "";
+                return { metadata: { partial: false }, xml: null };
+            }
+        } else { 
+            if (bufferToInspect.length > 0) { 
+                this._treatAsPlainText = true; 
+                this._rootTagDecisionMade = true;
+                this._plainTextAccumulator = bufferToInspect;
+                this._rootDeterminationBuffer = "";
+                return { metadata: { partial: true }, xml: [this._plainTextAccumulator] };
+            } else { 
+                 if (isFirstEverChunk && currentXmlString === "") { 
+                    return { metadata: { partial: true }, xml: null };
+                 }
+                 return { metadata: { partial: true }, xml: [] };
+            }
+        }
+      }
+    } else if (!this.allowedRootNodes && !this._rootTagDecisionMade) {
+      this._rootTagDecisionMade = true; 
+    }
+    // --- END Conditional XML Parsing Logic ---
+    
+    if (xmlChunk === null || xmlChunk === undefined) {
+        this._activelyStreaming = false;
+    } else if (currentXmlString || (this.streamingBuffer && this.streamingBuffer.length > 0) || (this.accumulator && this.accumulator.length > 0)) {
+        if (!this._activelyStreaming && (currentXmlString.trim().length > 0 || (this.streamingBuffer.trim().length > 0 && this.parsingIndex < this.streamingBuffer.length))) {
+            this._activelyStreaming = true;
+        }
+    }
+
     let combinedXmlString = currentXmlString;
-    let parentContextForReparse = null; // Re-declare and initialize
-    const originalIncompleteState = this.incompleteStructureState; // Capture before it's potentially nulled
+    const originalIncompleteState = this.incompleteStructureState; 
 
     if (originalIncompleteState && originalIncompleteState.partial) {
-      // Assign parentContextForReparse if parentOfPartial exists on the original state
-      if (originalIncompleteState.parentOfPartial) {
-        parentContextForReparse = originalIncompleteState.parentOfPartial;
-      }
-      const fragment = originalIncompleteState.partial; // This is the raw fragment
-
-      // Prepend fragment to current chunk's data.
-      // The check `currentXmlString || !this.streamingBuffer.startsWith(fragment)`
-      // was an attempt to avoid double prepending. Simpler to always prepend
-      // if a fragment exists and rely on parsingIndex=0.
+      const fragment = originalIncompleteState.partial; 
       combinedXmlString = fragment + currentXmlString;
-      this.parsingIndex = 0; // Reparse from start of combined string
+      this.parsingIndex = 0; 
 
-      // Set up reparse context ONLY if the incomplete state was for a tag fragment
-      // AND its parentOfPartial was an object (implying temporary text was added to an element).
-      // This should happen regardless of whether it's EOF or not, as _handleFallbackText
-      // relies on this context to prevent duplication during the EOF pass.
       if (
         (originalIncompleteState.type === "opening_tag_incomplete" ||
           originalIncompleteState.type === "closing_tag_incomplete" ||
@@ -1031,131 +1054,74 @@ class PartialXMLStreamParser {
         typeof originalIncompleteState.parentOfPartial === "object" &&
         !Array.isArray(originalIncompleteState.parentOfPartial)
       ) {
-        // Use processedPartialForCleanup if available (it should be if text was added to an object).
-        // This ensures the cleanup logic uses the same version of the text (decoded, etc.) as was added.
         const textToCleanup =
           originalIncompleteState.processedPartialForCleanup !== undefined
             ? originalIncompleteState.processedPartialForCleanup
-            : fragment; // Fallback to raw fragment if processed one isn't there
+            : fragment; 
 
         this.reparsedSegmentContext = {
           partialText: textToCleanup,
           parentContext: originalIncompleteState.parentOfPartial,
         };
       }
-      this.incompleteStructureState = null; // Clear the state after using its data
+      this.incompleteStructureState = null; 
     }
 
     if (combinedXmlString) {
       if (!this._activelyStreaming && combinedXmlString.trim().length > 0) {
         this._activelyStreaming = true;
-        this._originalBufferHadContent = true; // Mark that buffer received content
       }
-      // If a fragment was prepended (indicated by parsingIndex being reset to 0
-      // and combinedXmlString containing the fragment + new chunk data),
-      // the streamingBuffer should become this new combined string.
       if (
-        this.parsingIndex === 0 && // Indicates a reset, likely due to fragment prepend
+        this.parsingIndex === 0 && 
         originalIncompleteState &&
-        originalIncompleteState.partial && // Confirms a fragment was involved
-        combinedXmlString.startsWith(originalIncompleteState.partial) && // Sanity check
-        combinedXmlString !== currentXmlString // Ensures this logic runs only when a fragment was actually prepended
+        originalIncompleteState.partial && 
+        combinedXmlString.startsWith(originalIncompleteState.partial) && 
+        combinedXmlString !== currentXmlString 
       ) {
         this.streamingBuffer = combinedXmlString;
       } else {
-        // Normal append (no fragment prepend, or first chunk, or empty currentXmlString without prior fragment,
-        // or if combinedXmlString is identical to currentXmlString meaning no fragment was prepended)
         this.streamingBuffer += combinedXmlString;
       }
-
-      // If a fragment was prepended, ensure parsingIndex is 0 for the _processBuffer call.
-      // This was already set when incompleteStructureState.partial was handled.
-    } else if (xmlChunk === "" && !this._activelyStreaming) {
-      // If first chunk is empty string, mark that we've started but no real content yet
-      this._originalBufferHadContent = false;
+    } else if (xmlChunk === "" && isFirstEverChunk) {
+      // Handled by the isFreshParserCallForEmptyStream check below
     }
 
-    const isFreshParserCall =
+    const isFreshParserCallForEmptyStreamCheck = 
       this.accumulator.length === 0 &&
       this.tagStack.length === 0 &&
-      !this.incompleteStructureState && // This might be null now if a fragment was just consumed
+      !this.incompleteStructureState &&
       this.parsingIndex === 0 &&
-      this.streamingBuffer === combinedXmlString; // True if this is the first chunk ever (or first after fragment merge)
+      this.streamingBuffer === "" && 
+      this._rootDeterminationBuffer === "" && 
+      this._plainTextAccumulator === "";
 
     if (
-      isFreshParserCall &&
-      combinedXmlString === "" &&
+      isFreshParserCallForEmptyStreamCheck &&
+      currentXmlString === "" && 
       (xmlChunk === "" || xmlChunk === null || xmlChunk === undefined)
     ) {
-      // Handles:
-      // 1. Empty string as the very first chunk.
-      // 2. Null/undefined as the very first chunk (buffer is empty).
-      // 3. An incomplete fragment was the only thing, and then null/EOF arrived.
-      if (xmlChunk === null || xmlChunk === undefined) {
-        return { metadata: { partial: false }, xml: null }; // Empty stream, ended.
-      } else {
-        return { metadata: { partial: true }, xml: null }; // Empty first chunk, more might come.
+      if (xmlChunk === null || xmlChunk === undefined) { 
+        return { metadata: { partial: false }, xml: null }; 
+      } else { 
+        return { metadata: { partial: true }, xml: null }; 
       }
     }
 
-    // If an incomplete state existed and was consumed by prepending,
-    // and the new chunk (currentXmlString) is empty, and it's not EOF.
-    // This means we only processed the fragment.
-    // Commenting out this block as it's causing ReferenceError and its necessity is unclear
-    // with the current fragment prepending strategy.
-    // if (parentContextForReparse && currentXmlString === "" && xmlChunk !== null && xmlChunk !== undefined) {
-    //     // The fragment was prepended, parsingIndex reset, _processBuffer will run.
-    //     // If _processBuffer doesn't fully resolve it, incompleteStructureState might be set again.
-    //     // The existing logic for returning partial based on accumulator/tagStack/incompleteState should cover this.
-    // }
-
     if (xmlChunk === null || xmlChunk === undefined) {
-      // End of stream signaled
-      this.streamingBufferBeforeClear = this.streamingBuffer; // Save before potential clear
+      this.streamingBufferBeforeClear = this.streamingBuffer; 
     }
-
-    // This specific block for empty string chunk while incomplete state exists might be redundant
-    // if the fragment prepending logic correctly sets up the buffer for _processBuffer.
-    // Let's re-evaluate if this is still needed after the prepend logic.
-    // For now, commenting out as the prepend should handle merging.
-    // if (
-    //   this.streamingBuffer.length === this.parsingIndex &&
-    //   xmlChunk !== null &&
-    //   xmlChunk !== undefined &&
-    //   typeof currentXmlString === "string" &&
-    //   currentXmlString.length === 0 &&
-    //   this.incompleteStructureState // This would be a *new* incomplete state after processing the fragment
-    // ) {
-    //   return {
-    //     metadata: { partial: true },
-    //     xml: this.accumulator.length > 0 ? this.accumulator : [],
-    //   };
-    // }
 
     this._processBuffer();
 
-    // After _processBuffer, if a reparsedSegmentContext was created due to the prepended fragment
-    // and it involved a parentContextForReparse, we might need to ensure linkage.
-    // However, the standard addValueToObject should handle this if the tag is correctly formed.
-    // The main challenge is ensuring _processBuffer correctly parses the combined string.
-
-    // Slice the buffer if parsingIndex has advanced to free up memory
     if (this.parsingIndex > 0) {
       const sliceAmount = this.parsingIndex;
 
-      // Adjust state indices BEFORE slicing the buffer string itself,
-      // as they are relative to the current (un-sliced) buffer.
       if (
         this.incompleteStructureState &&
         this.incompleteStructureState.at !== undefined
       ) {
         this.incompleteStructureState.at -= sliceAmount;
-        // Safeguard against negative indices, though ideally this shouldn't happen with correct parsing logic.
         if (this.incompleteStructureState.at < 0) {
-          // This case should ideally not be hit if parsingIndex is managed correctly
-          // with prepended fragments. If 'at' becomes negative, it implies an issue.
-          // For safety, reset to 0, but log or debug if this happens.
-          // console.warn("Incomplete state 'at' became negative:", this.incompleteStructureState);
           this.incompleteStructureState.at = 0;
         }
 
@@ -1167,22 +1133,12 @@ class PartialXMLStreamParser {
           if (this.incompleteStructureState.contentStartIndex < 0)
             this.incompleteStructureState.contentStartIndex = 0;
         }
-        // No changes needed for 'partialData' types like cdata, comment, doctype, xmldecl here,
-        // as their 'at' is mostly for identifying the start of the special sequence,
-        // and continuation relies on finding the end marker from the current parsingIndex.
       }
-      // Adjust reparse context if it exists and is based on an index within the sliced part
       if (
         this.reparsedSegmentContext &&
         this.reparsedSegmentContext.originalIndex !== undefined
       ) {
         if (this.reparsedSegmentContext.originalIndex < sliceAmount) {
-          // The reparse point was within the sliced part.
-          // This might mean the reparse context is now invalid or needs complex adjustment.
-          // For simplicity, if the reparse point is sliced away, clear it.
-          // This assumes that if a fragment was prepended and fully parsed,
-          // the reparse context related to its *initial* partial state is no longer needed.
-          // console.warn("Reparsed segment context originalIndex was sliced away:", this.reparsedSegmentContext.originalIndex, sliceAmount);
           this.reparsedSegmentContext = null;
         } else {
           this.reparsedSegmentContext.originalIndex -= sliceAmount;
@@ -1190,195 +1146,84 @@ class PartialXMLStreamParser {
       }
 
       this.streamingBuffer = this.streamingBuffer.substring(sliceAmount);
-      this.parsingIndex = 0; // Reset parsingIndex as it's relative to the new buffer start
+      this.parsingIndex = 0; 
     }
 
     let finalXmlContent = this.accumulator.length > 0 ? this.accumulator : [];
     let isReturnPartial =
       this.tagStack.length > 0 || !!this.incompleteStructureState;
+    
+    let isSpecialOnlyAtEOF = false; // Renamed from isSpecialOnlyAndClearedAtEOF for clarity
 
-    // Initial check for partial based on incomplete states that are not EOF-specific yet
-    if (this.incompleteStructureState) {
-      const { type, at } = this.incompleteStructureState;
-      if (type === "stop_node_content" || type === "cdata") {
-        isReturnPartial = true;
-      } else if (
-        at !== undefined &&
-        this.streamingBuffer.length > 0 &&
-        at >= this.streamingBuffer.length
-      ) {
-        // If 'at' points to or beyond the end of the current buffer for other types, it's likely partial.
-        // This handles cases like "tag_start_incomplete" at the very end.
-        isReturnPartial = true;
-      }
-    }
-
-    if (xmlChunk === null || xmlChunk === undefined) {
-      // End of stream processing
-      this._lastClearedIncompleteStateWasSpecial = false; // Reset flag
-
+    if (xmlChunk === null || xmlChunk === undefined) { // EOF
       if (this.incompleteStructureState) {
         const stateType = this.incompleteStructureState.type;
-        const isSpecialIncomplete =
-          stateType === "doctype" ||
-          stateType === "xmldecl" ||
-          stateType === "comment";
-
-        if (
-          isSpecialIncomplete &&
-          this.accumulator.length === 0 &&
-          this.tagStack.length === 0
-        ) {
-          // If the only substantive thing is an unclosed special declaration (e.g. "<!DOCTYPE test" then EOF)
-          // Treat as non-partial, with an empty XML result.
-          isReturnPartial = false;
-          // finalXmlContent will be handled by the !isReturnPartial block below, ensuring it becomes []
-          this.incompleteStructureState = null; // Clear the state
-          this._lastClearedIncompleteStateWasSpecial = true; // Mark that a special tag was cleared this way
-        } else {
-          // Other incomplete types (cdata, stop_node, incomplete tags),
-          // or special incomplete types mixed with other parsed content/tags, remain partial.
+        const isSpecialIncomplete = stateType === "doctype" || stateType === "xmldecl" || stateType === "comment";
+        
+        if (isSpecialIncomplete && this.accumulator.length === 0 && this.tagStack.length === 0) {
+          const remainingBufferIsJustPartial = (this.streamingBufferBeforeClear || this.streamingBuffer).trim() === (this.incompleteStructureState.partial || "").trim();
+          if (remainingBufferIsJustPartial) {
+            isReturnPartial = false;
+            this.incompleteStructureState = null; 
+            isSpecialOnlyAtEOF = true; 
+            finalXmlContent = []; 
+          } else { 
+            isReturnPartial = true;
+          }
+        } else if ( (stateType === "opening_tag_incomplete" || stateType === "tag_start_incomplete" || stateType === "closing_tag_incomplete") && this.incompleteStructureState.partial) {
+            isReturnPartial = true; 
+            const fragment = this.incompleteStructureState.partial;
+            if (this.accumulator.length === 0 && !this._treatAsPlainText) { 
+                finalXmlContent = [{ [this.customOptions.textNodeName]: fragment }];
+            } else if (this.tagStack.length > 0 && this.currentPointer && !this._treatAsPlainText) { 
+                 let needsAdding = true;
+                 if (this.currentPointer.hasOwnProperty(this.customOptions.textNodeName)) {
+                    const currentText = this.currentPointer[this.customOptions.textNodeName];
+                    if ((typeof currentText === 'string' && currentText.endsWith(fragment)) || 
+                        (Array.isArray(currentText) && currentText.some(t => typeof t === 'string' && t.endsWith(fragment)))) {
+                        needsAdding = false;
+                    }
+                 }
+                 if(needsAdding) addValueToObject(this.currentPointer, this.customOptions.textNodeName, fragment, this.customOptions);
+                 finalXmlContent = this.accumulator.length > 0 ? this.accumulator : []; 
+            }
+        } else { 
           isReturnPartial = true;
         }
       } else if (this.tagStack.length > 0) {
-        isReturnPartial = true; // Unclosed regular tags
+        isReturnPartial = true; 
       } else {
-        // No incomplete state, no unclosed tags
         isReturnPartial = false;
       }
 
       if (!isReturnPartial) {
-        // This block determines finalXmlContent (null vs []) for non-partial results.
-        const effectiveBufferContent =
-          this.streamingBufferBeforeClear || this.streamingBuffer;
-        const tempBufferForNullCheck = effectiveBufferContent
-          .replace(/<\?xml[^?]*\?>/g, "")
-          .replace(/<!--[\s\S]*?-->/g, "")
-          .replace(/<!DOCTYPE[^>]*>/g, "")
-          .trim();
+        const effectiveBufferContent = this.streamingBufferBeforeClear || this.streamingBuffer;
+        const tempBufferForNullCheck = effectiveBufferContent.replace(/<\?xml[^?]*\?>/g, "").replace(/<!--[\s\S]*?-->/g, "").replace(/<!DOCTYPE[^>]*>/g, "").trim();
 
-        if (this.accumulator.length === 0 && tempBufferForNullCheck === "") {
-          // Accumulator is empty, and buffer (after stripping specials) is also empty.
-          if (this._lastClearedIncompleteStateWasSpecial) {
-            // If we just cleared an unclosed special tag as the only content.
+        if (isSpecialOnlyAtEOF) { 
             finalXmlContent = [];
-          } else if (
-            !this._originalBufferHadContent &&
-            effectiveBufferContent === ""
-          ) {
-            // Truly empty input from start to end (no chunks ever had non-whitespace).
-            finalXmlContent = null;
-          } else {
-            // Buffer had some content (e.g. only comments, or only an unclosed special tag that wasn't cleared by the above)
-            // which all reduced to nothing. Or, it was an empty stream from the start.
+        } else if (this.accumulator.length === 0 && tempBufferForNullCheck === "") {
+             if (!this._originalBufferHadContent && effectiveBufferContent === "") {
+                finalXmlContent = null;
+            } else {
+                finalXmlContent = [];
+            }
+        } else if (this.accumulator.length === 0 && tempBufferForNullCheck !== "" && !this._treatAsPlainText) {
+            finalXmlContent = [tempBufferForNullCheck]; 
+        } else if (this.accumulator.length > 0) {
+            finalXmlContent = this.accumulator;
+        } else { 
             finalXmlContent = [];
-          }
-        } else if (
-          this.accumulator.length === 0 &&
-          tempBufferForNullCheck !== ""
-        ) {
-          // Accumulator empty, but buffer had some non-special, non-empty text that didn't form elements.
-          finalXmlContent = [];
-        } else {
-          // Accumulator has content, use it.
-          finalXmlContent = this.accumulator.length > 0 ? this.accumulator : [];
         }
 
-        this.streamingBuffer = "";
-        this.parsingIndex = 0;
-        this._activelyStreaming = false;
-        this._originalBufferHadContent = false;
-        this.incompleteStructureState = null;
-        this.streamingBufferBeforeClear = "";
-      } else {
-        // If isReturnPartial is true, finalXmlContent is already based on this.accumulator
-        // (or potentially an empty array if accumulator is empty but still partial)
-        finalXmlContent = this.accumulator.length > 0 ? this.accumulator : [];
-        if (this.incompleteStructureState) {
-          // If we are ending partial due to an incomplete structure,
-          // any reparse context set up for it is now moot.
-          this.reparsedSegmentContext = null;
+        this.streamingBuffer = ""; this.parsingIndex = 0; this._activelyStreaming = false;
+        this._originalBufferHadContent = false; this.incompleteStructureState = null;
+        this.streamingBufferBeforeClear = ""; this._lastClearedIncompleteStateWasSpecial = isSpecialOnlyAtEOF;
+      } else { 
+         if (!(this.incompleteStructureState && (this.incompleteStructureState.type === "opening_tag_incomplete" || this.incompleteStructureState.type === "tag_start_incomplete" || this.incompleteStructureState.type === "closing_tag_incomplete"))) {
+            finalXmlContent = this.accumulator.length > 0 ? this.accumulator : [];
         }
-
-        // Workaround for the persistent issue with "<" fragment at EOF
-        if (
-          this.incompleteStructureState &&
-          (this.incompleteStructureState.type === "tag_start_incomplete" ||
-           this.incompleteStructureState.type === "opening_tag_incomplete" ||
-           this.incompleteStructureState.type === "closing_tag_incomplete") &&
-          this.incompleteStructureState.partial &&
-          this.incompleteStructureState.parentOfPartial
-        ) {
-          const parent = this.incompleteStructureState.parentOfPartial;
-          const textNodeName = this.customOptions.textNodeName;
-          const fragmentText = this.incompleteStructureState.processedPartialForCleanup || this.incompleteStructureState.partial;
-
-          // Only proceed if parent is an object (not an array)
-          if (typeof parent === "object" && !Array.isArray(parent)) {
-            // Check if the text is already there or ends with the fragment
-            let needsAdding = true;
-            if (parent.hasOwnProperty(textNodeName)) {
-              if (typeof parent[textNodeName] === 'string' && parent[textNodeName].endsWith(fragmentText)) {
-                needsAdding = false;
-              } else if (Array.isArray(parent[textNodeName]) && parent[textNodeName].some(t => typeof t === 'string' && t.endsWith(fragmentText))) {
-                needsAdding = false;
-              }
-            }
-            
-            if (needsAdding) {
-               addValueToObject(parent, textNodeName, fragmentText, this.customOptions);
-            }
-          }
-        }
-        
-        // Special handling for the specific test cases with incomplete tags at EOF
-        if (xmlChunk === null) {
-          // Case 1: Handle "<" at the end after a complete tag
-          const lastChunkEndsWithLessThan =
-            this.streamingBuffer.endsWith("<") ||
-            (this.streamingBufferBeforeClear && this.streamingBufferBeforeClear.endsWith("<"));
-            
-          if (
-            this.tagStack.length > 0 &&
-            this.currentPointer &&
-            lastChunkEndsWithLessThan
-          ) {
-            const textNodeName = this.customOptions.textNodeName;
-            // Add the "<" character as a text node to the parent element
-            addValueToObject(this.currentPointer, textNodeName, "<", this.customOptions);
-          }
-          
-          // Case 2: Handle incomplete opening tag with attributes
-          const effectiveBuffer = this.streamingBufferBeforeClear || this.streamingBuffer;
-          if (
-            effectiveBuffer.startsWith("<") &&
-            effectiveBuffer.indexOf(">") === -1 &&
-            effectiveBuffer.match(/^<[\w:-]+(\s+[\w:-]+(=(['"]).*?\3)?)*$/) // Matches incomplete opening tag with attributes
-          ) {
-            // This is an incomplete opening tag that should be treated as text
-            isReturnPartial = true;
-            
-            // Direct fix for the specific test case with "<root attr='val"
-            if (effectiveBuffer === "<root attr='val") {
-              this.accumulator = [{ [textNodeName]: effectiveBuffer }];
-            } else if (this.accumulator.length === 0) {
-              this.accumulator.push({ [textNodeName]: effectiveBuffer });
-            }
-          }
-          
-          // Direct fix for the specific test case with "<root><item>Text</item><"
-          if (
-            this.accumulator.length === 1 &&
-            this.accumulator[0].root &&
-            this.accumulator[0].root.item &&
-            this.accumulator[0].root.item["#text"] === "Text" &&
-            !this.accumulator[0].root["#text"] &&
-            lastChunkEndsWithLessThan
-          ) {
-            // This is exactly the test case we're trying to fix
-            this.accumulator[0].root["#text"] = "<";
-          }
-        }
+        if (this.incompleteStructureState) this.reparsedSegmentContext = null;
       }
     }
 
@@ -1386,55 +1231,15 @@ class PartialXMLStreamParser {
       metadata: { partial: isReturnPartial },
       xml: finalXmlContent,
     };
-
-    // Final check for specific null case: stream ends, not partial, accumulator empty, and original buffer was effectively empty.
-    if (
-      (xmlChunk === null || xmlChunk === undefined) &&
-      !result.metadata.partial &&
-      result.xml &&
-      result.xml.length === 0
-    ) {
-      const effectiveBuffer =
-        this.streamingBufferBeforeClear !== undefined
-          ? this.streamingBufferBeforeClear
-          : this.streamingBuffer;
-      const tempBuffer = effectiveBuffer
-        .replace(/<\?xml[^?]*\?>/g, "")
-        .replace(/<!--[\s\S]*?-->/g, "")
-        .replace(/<!DOCTYPE[^>]*>/g, "")
-        .trim();
-      if (tempBuffer === "" && !this._originalBufferHadContent) {
-        // Check if buffer ever had meaningful content
-        result.xml = null;
-      } else if (tempBuffer === "") {
-        // If buffer had content but it all reduced to nothing (e.g. only comments)
-        // and accumulator is empty, result.xml should be [] (empty array), not null.
-        // This is typically handled by finalXmlContent defaulting to [].
-        // However, if it became null above, this might need adjustment.
-        // The current logic: if finalXmlContent became null, it stays null.
-        // If it was [], it stays [].
-      }
-    }
-    // If stream ends, and it's the very first call with null/undefined, and buffer is empty
-    if (
-      (xmlChunk === null || xmlChunk === undefined) &&
-      isFreshParserCall &&
-      this.streamingBuffer.trim() === ""
-    ) {
-      result.xml = [];
-      result.metadata.partial = false;
-    }
-
-    // Direct fix for specific test cases
-    if (
-      xmlChunk === null &&
-      this.streamingBufferBeforeClear === "<root attr='val" &&
-      result.metadata.partial === false &&
-      (result.xml === null || result.xml.length === 0)
-    ) {
-      // This is exactly the test case we're trying to fix
-      result.metadata.partial = true;
-      result.xml = [{ "#text": "<root attr='val" }];
+    
+    if (xmlChunk === null && !result.metadata.partial) { 
+        if (isSpecialOnlyAtEOF) { // If it was an unterminated special tag as only content
+            result.xml = [];
+        } else if (result.xml && result.xml.length === 0 && !this._originalBufferHadContent && (this.streamingBufferBeforeClear || this.streamingBuffer).trim() === "") {
+            result.xml = null;
+        } else if (result.xml === null && this._originalBufferHadContent && (this.streamingBufferBeforeClear || this.streamingBuffer).trim() === "" && this.accumulator.length === 0) {
+            result.xml = [];
+        }
     }
     
     return result;

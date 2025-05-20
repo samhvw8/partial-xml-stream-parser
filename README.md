@@ -18,6 +18,7 @@ A lenient, streaming XML parser for Node.js. This parser is designed to handle X
 - **CDATA Support**: Properly handles CDATA sections.
 - **Stop Nodes**: Ability to specify tags whose content should not be parsed.
 - **Primitive Type Parsing**: Optional conversion of string values to numbers and booleans.
+- **Conditional Root Node Parsing**: Optionally parse XML only if the root element name is in an allowed list, otherwise treat input as plain text using the `allowedRootNodes` option.
 - **Multiple Root Elements**: Supports XML with multiple root elements, returned as an array.
 
 ## Use Cases
@@ -160,6 +161,7 @@ const parser = new PartialXMLStreamParser({
   alwaysCreateTextNode: true, // Default is true
   // parsePrimitives: false, // Default is false
   // stopNodes: [], // Default is empty
+  // allowedRootNodes: [], // Default is empty (parse all XML unconditionally)
 });
 
 let result;
@@ -338,6 +340,80 @@ console.log(JSON.stringify(resultDefault, null, 2));
 // }
 ```
 
+#### Conditional Root Node Parsing (`allowedRootNodes`)
+
+The `allowedRootNodes` option allows you to specify a list of root element names. If the incoming stream's root element is in this list (or matches the string, if a string is provided), it will be parsed as XML. Otherwise, the entire stream will be treated as plain text. This is useful when you expect XML only of a certain type and want to gracefully handle other inputs as raw text.
+
+- If `allowedRootNodes` is an empty array (default) or `undefined`, all XML will be parsed.
+- If `allowedRootNodes` is a non-empty array of strings, only XML whose root tag is one of those strings will be parsed.
+- If `allowedRootNodes` is a single string, only XML whose root tag matches that string will be parsed.
+
+```javascript
+// Example 1: Allowed root node
+const parserAllowed = new PartialXMLStreamParser({ allowedRootNodes: ["message"] });
+let resultAllowed = parserAllowed.parseStream("<message><content>Hello</content></message>");
+console.log("--- Allowed Root ---");
+console.log(JSON.stringify(resultAllowed, null, 2));
+// Output:
+// {
+//   "metadata": { "partial": false },
+//   "xml": [ { "message": { "content": { "#text": "Hello" } } } ]
+// }
+resultAllowed = parserAllowed.parseStream(null); // End stream
+console.log(JSON.stringify(resultAllowed, null, 2));
+
+
+// Example 2: Not an allowed root node
+const parserNotAllowed = new PartialXMLStreamParser({ allowedRootNodes: ["message"] });
+let resultNotAllowed = parserNotAllowed.parseStream("<alert><text>Warning</text></alert>");
+console.log("--- Not Allowed Root (treated as plain text) ---");
+console.log(JSON.stringify(resultNotAllowed, null, 2));
+// Output:
+// {
+//   "metadata": { "partial": true },
+//   "xml": [ "<alert><text>Warning</text></alert>" ]
+// }
+resultNotAllowed = parserNotAllowed.parseStream(null); // End stream
+console.log(JSON.stringify(resultNotAllowed, null, 2));
+// Output:
+// {
+//   "metadata": { "partial": false },
+//   "xml": [ "<alert><text>Warning</text></alert>" ]
+// }
+
+// Example 3: allowedRootNodes active, but input is plain text from the start
+const parserPlainText = new PartialXMLStreamParser({ allowedRootNodes: ["message"] });
+let resultPlainText = parserPlainText.parseStream("This is just simple text.");
+console.log("--- Plain text with allowedRootNodes active ---");
+console.log(JSON.stringify(resultPlainText, null, 2));
+// Output:
+// {
+//   "metadata": { "partial": true },
+//   "xml": [ "This is just simple text." ]
+// }
+resultPlainText = parserPlainText.parseStream(null); // End stream
+console.log(JSON.stringify(resultPlainText, null, 2));
+// Output:
+// {
+//   "metadata": { "partial": false },
+//   "xml": [ "This is just simple text." ]
+// }
+
+// Example 4: allowedRootNodes not provided or empty (default behavior - parse all XML)
+const parserDefaultBehavior = new PartialXMLStreamParser(); // or { allowedRootNodes: [] }
+let resultDefaultBehav = parserDefaultBehavior.parseStream("<anyRoot><data>info</data></anyRoot>");
+console.log("--- Default (no allowedRootNodes restriction) ---");
+console.log(JSON.stringify(resultDefaultBehav, null, 2));
+// Output:
+// {
+//   "metadata": { "partial": false },
+//   "xml": [ { "anyRoot": { "data": { "#text": "info" } } } ]
+// }
+resultDefaultBehav = parserDefaultBehavior.parseStream(null);
+console.log(JSON.stringify(resultDefaultBehav, null, 2));
+
+```
+
 ## API
 
 ### `new PartialXMLStreamParser(options)`
@@ -350,6 +426,7 @@ Creates a new parser instance.
   - `stopNodes` (Array|String): Tag names (e.g., `script`) or paths (e.g., `parent.child.tag`) that should not have their children parsed. Defaults to `[]`.
   - `alwaysCreateTextNode` (Boolean): If true, text content is always in a text node. Defaults to `true`.
   - `parsePrimitives` (Boolean): If true, attempts to parse numbers and booleans from text and attribute values. Defaults to `false`.
+  - `allowedRootNodes` (Array<String>|String): Optional. If provided and not empty, the parser will only treat the input as XML if the root element's name is in this list (or matches the string, if a string is provided). Otherwise, the input is treated as plain text. Defaults to `[]` (parse all XML unconditionally).
 
 ### `parser.parseStream(xmlChunk)`
 

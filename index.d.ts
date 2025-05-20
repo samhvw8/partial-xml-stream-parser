@@ -35,6 +35,16 @@ export interface PartialXMLStreamParserOptions {
    * @default false
    */
   parsePrimitives?: boolean;
+
+  /**
+   * Optional array of permitted root element names.
+   * If provided and not empty, the parser will only treat the input as XML if the root element's name is in this list.
+   * Otherwise, the input is treated as plain text.
+   * If undefined or an empty array, XML is parsed unconditionally.
+   * Can be a single string or an array of strings.
+   * @default []
+   */
+  allowedRootNodes?: string[] | string;
 }
 
 /**
@@ -184,6 +194,15 @@ declare class PartialXMLStreamParser {
    * Set of path stop nodes
    */
   private pathStopNodes: Set<string>;
+
+  private _rootTagDecisionMade: boolean;
+  private _treatAsPlainText: boolean;
+  private _rootDeterminationBuffer: string;
+  private _plainTextAccumulator: any[];
+  private _originalBufferHadContent: boolean;
+  private streamingBufferBeforeClear: string;
+  private _lastClearedIncompleteStateWasSpecial: boolean;
+
 
   /**
    * Decode XML entities in text

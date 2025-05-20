@@ -1431,3 +1431,150 @@ describe("PartialXMLStreamParser", () => {
     expect(finalResult.metadata.partial).toBe(false);
   });
 });
+describe("Conditional XML Parsing with allowedRootNodes", () => {
+  let parser;
+
+  it("should parse as XML when root node matches allowedRootNodes", () => {
+    parser = new PartialXMLStreamParser({ allowedRootNodes: ["allowedRoot"], textNodeName: "#text" });
+    let streamResult = parser.parseStream("<allowedRoot><item>content</item></allowedRoot>");
+    expect(streamResult.xml).toEqual([{ allowedRoot: { item: { "#text": "content" } } }]);
+    expect(streamResult.metadata.partial).toBe(false); // Assuming complete XML in one chunk
+    streamResult = parser.parseStream(null);
+    expect(streamResult.xml).toEqual([{ allowedRoot: { item: { "#text": "content" } } }]);
+    expect(streamResult.metadata.partial).toBe(false);
+
+    parser.reset();
+    streamResult = parser.parseStream("<allo");
+    expect(streamResult.xml).toEqual([]); // No complete root tag yet, decision pending
+    expect(streamResult.metadata.partial).toBe(true);
+    streamResult = parser.parseStream("wedRoot><item>data</item></allowedRoot>");
+    expect(streamResult.xml).toEqual([{ allowedRoot: { item: { "#text": "data" } } }]);
+    expect(streamResult.metadata.partial).toBe(false); // Complete XML
+    streamResult = parser.parseStream(null);
+    expect(streamResult.xml).toEqual([{ allowedRoot: { item: { "#text": "data" } } }]);
+    expect(streamResult.metadata.partial).toBe(false);
+  });
+
+  it("should treat as plain text when root node does not match allowedRootNodes", () => {
+    parser = new PartialXMLStreamParser({ allowedRootNodes: ["validRoot"], textNodeName: "#text" });
+    let streamResult = parser.parseStream("<notAll");
+    expect(streamResult.xml).toEqual(["<notAll"]);
+    expect(streamResult.metadata.partial).toBe(true);
+    streamResult = parser.parseStream("owed><item>text</item></notAllowed>");
+    expect(streamResult.xml).toEqual(["<notAllowed><item>text</item></notAllowed>"]);
+    expect(streamResult.metadata.partial).toBe(true); // Still partial until null
+    streamResult = parser.parseStream(null);
+    expect(streamResult.xml).toEqual(["<notAllowed><item>text</item></notAllowed>"]);
+    expect(streamResult.metadata.partial).toBe(false);
+  });
+
+  it("should parse as XML when allowedRootNodes is undefined", () => {
+    parser = new PartialXMLStreamParser({ textNodeName: "#text" }); // allowedRootNodes is undefined
+    let streamResult = parser.parseStream("<anyRoot><item>content</item></anyRoot>");
+    expect(streamResult.xml).toEqual([{ anyRoot: { item: { "#text": "content" } } }]);
+    expect(streamResult.metadata.partial).toBe(false);
+    streamResult = parser.parseStream(null);
+    expect(streamResult.xml).toEqual([{ anyRoot: { item: { "#text": "content" } } }]);
+    expect(streamResult.metadata.partial).toBe(false);
+  });
+
+  it("should parse as XML when allowedRootNodes is an empty array", () => {
+    parser = new PartialXMLStreamParser({ allowedRootNodes: [], textNodeName: "#text" });
+    let streamResult = parser.parseStream("<anyRoot><item>content</item></anyRoot>");
+    expect(streamResult.xml).toEqual([{ anyRoot: { item: { "#text": "content" } } }]);
+    expect(streamResult.metadata.partial).toBe(false);
+    streamResult = parser.parseStream(null);
+    expect(streamResult.xml).toEqual([{ anyRoot: { item: { "#text": "content" } } }]);
+    expect(streamResult.metadata.partial).toBe(false);
+  });
+
+  it("should parse as XML when allowedRootNodes is a string and matches", () => {
+    parser = new PartialXMLStreamParser({ allowedRootNodes: "allowedRoot", textNodeName: "#text" });
+    let streamResult = parser.parseStream("<allowedRoot><item>data</item></allowedRoot>");
+    expect(streamResult.xml).toEqual([{ allowedRoot: { item: { "#text": "data" } } }]);
+    expect(streamResult.metadata.partial).toBe(false);
+    streamResult = parser.parseStream(null);
+    expect(streamResult.xml).toEqual([{ allowedRoot: { item: { "#text": "data" } } }]);
+    expect(streamResult.metadata.partial).toBe(false);
+  });
+
+  it("should treat as plain text when allowedRootNodes is a string and does not match", () => {
+    parser = new PartialXMLStreamParser({ allowedRootNodes: "allowedRoot", textNodeName: "#text" });
+    let streamResult = parser.parseStream("<otherRoot>data</otherRoot>");
+    expect(streamResult.xml).toEqual(["<otherRoot>data</otherRoot>"]);
+    expect(streamResult.metadata.partial).toBe(true); // Will be plain text, but partial until null
+    streamResult = parser.parseStream(null);
+    expect(streamResult.xml).toEqual(["<otherRoot>data</otherRoot>"]);
+    expect(streamResult.metadata.partial).toBe(false);
+  });
+
+  it("should treat non-XML input as plain text when allowedRootNodes is active", () => {
+    parser = new PartialXMLStreamParser({ allowedRootNodes: ["root"], textNodeName: "#text" });
+    let streamResult = parser.parseStream("this is plain text");
+    expect(streamResult.xml).toEqual(["this is plain text"]);
+    // If it's the only chunk before null, it might be partial: false immediately.
+    // However, the current logic might keep it partial until null.
+    // Let's assume it's partial until null for consistency with other text cases.
+    expect(streamResult.metadata.partial).toBe(true);
+    streamResult = parser.parseStream(null);
+    expect(streamResult.xml).toEqual(["this is plain text"]);
+    expect(streamResult.metadata.partial).toBe(false);
+  });
+
+  it("should treat as plain text if stream ends before root tag is fully identified", () => {
+    parser = new PartialXMLStreamParser({ allowedRootNodes: ["root"], textNodeName: "#text" });
+    let streamResult = parser.parseStream("<roo");
+    expect(streamResult.xml).toEqual([]); // Decision pending
+    expect(streamResult.metadata.partial).toBe(true);
+    streamResult = parser.parseStream(null);
+    expect(streamResult.xml).toEqual(["<roo"]); // Treated as plain text at EOS
+    expect(streamResult.metadata.partial).toBe(false);
+  });
+
+  it("should continue as plain text if initial chunks determine non-XML", () => {
+    parser = new PartialXMLStreamParser({ allowedRootNodes: ["root"], textNodeName: "#text" });
+    let streamResult = parser.parseStream("  leading text ");
+    expect(streamResult.xml).toEqual(["  leading text "]); // Decision: plain text
+    expect(streamResult.metadata.partial).toBe(true);
+    streamResult = parser.parseStream("<notRoot>more</notRoot>");
+    expect(streamResult.xml).toEqual(["  leading text <notRoot>more</notRoot>"]);
+    expect(streamResult.metadata.partial).toBe(true);
+    streamResult = parser.parseStream(null);
+    expect(streamResult.xml).toEqual(["  leading text <notRoot>more</notRoot>"]);
+    expect(streamResult.metadata.partial).toBe(false);
+  });
+
+  it("should handle empty or whitespace-only input correctly with allowedRootNodes", () => {
+    parser = new PartialXMLStreamParser({ allowedRootNodes: ["root"], textNodeName: "#text" });
+    let streamResult = parser.parseStream("");
+    expect(streamResult.xml).toBeNull(); // Or `xml: []` depending on internal handling
+    expect(streamResult.metadata.partial).toBe(true);
+    streamResult = parser.parseStream(null);
+    expect(streamResult.xml).toBeNull();
+    expect(streamResult.metadata.partial).toBe(false);
+
+    parser.reset();
+    streamResult = parser.parseStream("   ");
+    expect(streamResult.xml).toEqual(["   "]); // Decision: plain text
+    expect(streamResult.metadata.partial).toBe(true);
+    streamResult = parser.parseStream(null);
+    expect(streamResult.xml).toEqual(["   "]);
+    expect(streamResult.metadata.partial).toBe(false);
+  });
+
+  it("should correctly identify root tag even if split across multiple small chunks", () => {
+    parser = new PartialXMLStreamParser({ allowedRootNodes: ["veryLongRootElementName"], textNodeName: "#text" });
+    let streamResult = parser.parseStream("<very");
+    expect(streamResult.xml).toEqual([]); expect(streamResult.metadata.partial).toBe(true);
+    streamResult = parser.parseStream("LongRoo");
+    expect(streamResult.xml).toEqual([]); expect(streamResult.metadata.partial).toBe(true);
+    streamResult = parser.parseStream("tElementNa");
+    expect(streamResult.xml).toEqual([]); expect(streamResult.metadata.partial).toBe(true);
+    streamResult = parser.parseStream("me><item>data</item></veryLongRootElementName>");
+    expect(streamResult.xml).toEqual([{ veryLongRootElementName: { item: { "#text": "data" } } }]);
+    expect(streamResult.metadata.partial).toBe(false);
+    streamResult = parser.parseStream(null);
+    expect(streamResult.xml).toEqual([{ veryLongRootElementName: { item: { "#text": "data" } } }]);
+    expect(streamResult.metadata.partial).toBe(false);
+  });
+});
