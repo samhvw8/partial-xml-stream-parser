@@ -1,20 +1,15 @@
 {
   "name": "partial-xml-stream-parser",
-  "version": "1.4.4",
-  "type": "module",
+  "version": "1.5.1",
   "description": "A lenient XML stream parser that can handle incomplete or malformed XML data, with support for conditional root node parsing.",
-  "main": "index.cjs",
+  "main": "index.js",
   "types": "index.d.ts",
-  "exports": {
-    ".": {
-      "types": "./index.d.ts",
-      "import": "./index.mjs",
-      "require": "./index.cjs"
-    }
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/samhvw8/partial-xml-stream-parser.git"
   },
   "files": [
-    "index.mjs",
-    "index.cjs",
+    "index.js",
     "index.d.ts",
     "src/"
   ],

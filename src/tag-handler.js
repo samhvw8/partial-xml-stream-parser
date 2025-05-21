@@ -1,13 +1,13 @@
 // src/tag-handler.js
-import { addValueToObject } from "./dom-builder.js";
-import { tryParsePrimitive, decodeXmlEntities, parseAttributes } from "./utils.js";
-import {
+const { addValueToObject } = require("./dom-builder.js");
+const { tryParsePrimitive, decodeXmlEntities, parseAttributes } = require("./utils.js");
+const {
   STATIC_OPENING_TAG_REGEX,
   STATIC_CLOSING_TAG_REGEX,
   COMMON_ENTITIES,
-} from "./constants.js";
+} = require("./constants.js");
 
-export function handleSpecialPrefixes(parserContext, buffer, charAfterLT) {
+function handleSpecialPrefixes(parserContext, buffer, charAfterLT) {
   const i = parserContext.parsingIndex;
   const len = buffer.length;
   const textNodeName = parserContext.customOptions.textNodeName;
@@ -62,20 +62,9 @@ export function handleSpecialPrefixes(parserContext, buffer, charAfterLT) {
           at: i, 
           partialData: currentPartialData + partialContent,
         };
-        // Provisional text for incomplete CDATA was handled by state-processor or main loop before,
-        // For now, this function focuses on setting state for incomplete special tags.
-        // The original logic in handleSpecialPrefixes did add to currentPointer/accumulator here.
-        // Let's replicate that if it's intended to be part of this function's responsibility.
-        // Based on prompt's provided `handleSpecialPrefixes` for `src/tag-handler.js`, it does add.
-        if (partialContent.length > 0) { // Add the new segment provisionally
+        if (partialContent.length > 0) { 
             if (parserContext.tagStack.length > 0 && parserContext.currentPointer) {
                 addValueToObject(parserContext.currentPointer, textNodeName, partialContent, parserContext.customOptions);
-            } else if (parserContext.tagStack.length === 0) {
-                // Avoid duplicating if it's the first part of an already tracked incomplete CDATA
-                if (!(parserContext.incompleteStructureState && parserContext.incompleteStructureState.type === 'cdata' && currentPartialData !== "")) {
-                     // This logic is tricky; state-processor usually handles adding from partialData.
-                     // The provided `handleSpecialPrefixes` has this direct add.
-                }
             }
         }
         parserContext.parsingIndex = len;
@@ -93,11 +82,6 @@ export function handleSpecialPrefixes(parserContext, buffer, charAfterLT) {
 
         if (fullTextContent.length > 0) {
           if (parserContext.tagStack.length > 0 && parserContext.currentPointer) {
-            // If there was a prevPartialData, it might have been added provisionally.
-            // The `addValueToObject` with `alwaysCreateTextNode: true` might append.
-            // If `alwaysCreateTextNode: false` and it was the only text, it might replace.
-            // This needs to be handled carefully to avoid duplication or data loss.
-            // For now, assume addValueToObject handles it correctly or state-processor cleans up.
             addValueToObject(
               parserContext.currentPointer,
               textNodeName,
@@ -132,7 +116,7 @@ export function handleSpecialPrefixes(parserContext, buffer, charAfterLT) {
   return { matched: false, shouldReturn: false, shouldContinue: false };
 }
 
-export function handleClosingTag(parserContext, tagString) {
+function handleClosingTag(parserContext, tagString) {
   const textNodeName = parserContext.customOptions.textNodeName;
   const match = tagString.match(STATIC_CLOSING_TAG_REGEX);
   if (match) {
@@ -203,7 +187,7 @@ export function handleClosingTag(parserContext, tagString) {
   return false;
 }
 
-export function handleOpeningTag(parserContext, tagString, i) {
+function handleOpeningTag(parserContext, tagString, i) {
   const buffer = parserContext.streamingBuffer;
   const len = buffer.length;
   const textNodeName = parserContext.customOptions.textNodeName;
@@ -403,7 +387,7 @@ export function handleOpeningTag(parserContext, tagString, i) {
   return { processed: false, shouldReturn: false };
 }
 
-export function handleFallbackText(parserContext, buffer, startIndex, textNodeName) {
+function handleFallbackText(parserContext, buffer, startIndex, textNodeName) {
   let endOfProblematicText = buffer.indexOf("<", startIndex + 1);
   if (endOfProblematicText === -1) endOfProblematicText = buffer.length;
 
@@ -510,11 +494,10 @@ export function handleFallbackText(parserContext, buffer, startIndex, textNodeNa
   }
   return endOfProblematicText;
 }
-export function handleTextNode(parserContext, i) {
+function handleTextNode(parserContext, i) {
   const buffer = parserContext.streamingBuffer;
   const len = buffer.length;
   const textNodeName = parserContext.customOptions.textNodeName;
-  // COMMON_ENTITIES, decodeXmlEntities, tryParsePrimitive, addValueToObject are available from module scope
 
   let textEnd = buffer.indexOf("<", i);
   if (textEnd === -1) textEnd = len;
@@ -545,3 +528,11 @@ export function handleTextNode(parserContext, i) {
   parserContext.parsingIndex = textEnd;
   parserContext.incompleteStructureState = null;
 }
+
+module.exports = {
+  handleSpecialPrefixes,
+  handleClosingTag,
+  handleOpeningTag,
+  handleFallbackText,
+  handleTextNode,
+};

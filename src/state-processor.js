@@ -1,5 +1,5 @@
-import { addValueToObject } from "./dom-builder.js";
-import { tryParsePrimitive } from "./utils.js";
+const { addValueToObject } = require("./dom-builder.js");
+const { tryParsePrimitive } = require("./utils.js");
 
 /**
  * Handles text content for CDATA and stop node sections
@@ -39,7 +39,7 @@ function getOrCreateTagPattern(tagName, cache) {
  * @param {Object} parserContext - XML parser context
  * @returns {Object} Processing result indicating if parsing should continue
  */
-export function handleIncompleteState(parserContext) {
+function handleIncompleteState(parserContext) {
   const {
     incompleteStructureState: state,
     streamingBuffer: buffer,
@@ -172,3 +172,7 @@ export function handleIncompleteState(parserContext) {
   }
   return { shouldReturn: false };
 }
+
+module.exports = {
+  handleIncompleteState,
+};

@@ -1,7 +1,7 @@
-import { STATIC_OPENING_TAG_REGEX } from "./constants.js";
-import { addValueToObject } from "./dom-builder.js";
+const { STATIC_OPENING_TAG_REGEX } = require("./constants.js");
+const { addValueToObject } = require("./dom-builder.js");
 
-export function processXmlChunk(parserContext, xmlChunk) {
+function processXmlChunk(parserContext, xmlChunk) {
   let currentXmlString = "";
   if (xmlChunk === null || xmlChunk === undefined) {
     // EOF, specific handling below
@@ -210,7 +210,7 @@ export function processXmlChunk(parserContext, xmlChunk) {
   return { shouldProcessBuffer: true, earlyExitResult: null };
 }
 
-export function finalizeStreamResult(parserContext, xmlChunk) {
+function finalizeStreamResult(parserContext, xmlChunk) {
   if (parserContext.parsingIndex > 0) {
     const sliceAmount = parserContext.parsingIndex;
 
@@ -342,3 +342,8 @@ export function finalizeStreamResult(parserContext, xmlChunk) {
 
   return result;
 }
+
+module.exports = {
+  processXmlChunk,
+  finalizeStreamResult,
+};

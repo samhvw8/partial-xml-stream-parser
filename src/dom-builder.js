@@ -1,6 +1,6 @@
 // src/dom-builder.js
 
-export function addValueToObject(
+function addValueToObject(
   obj,
   key,
   value,
@@ -28,4 +28,8 @@ export function addValueToObject(
     obj[key] = [obj[key]];
   }
   obj[key][obj[key].length] = value;
+};
+
+module.exports = {
+  addValueToObject,
 };

@@ -1,8 +1,7 @@
 // PartialXMLStreamParser.js (Lenient Streaming Focus)
-// import { DEFAULT_STREAM_OPTIONS } from "./src/options.js"; // Removed
-import { processXmlChunk, finalizeStreamResult } from "./src/stream-processor.js";
-import { coreProcessBuffer } from "./src/core-parser.js";
-import { initializeParserOptions, resetParserState } from "./src/parser-setup.js";
+const { processXmlChunk, finalizeStreamResult } = require("./src/stream-processor.js");
+const { coreProcessBuffer } = require("./src/core-parser.js");
+const { initializeParserOptions, resetParserState } = require("./src/parser-setup.js");
 
 class PartialXMLStreamParser {
   constructor(options) {

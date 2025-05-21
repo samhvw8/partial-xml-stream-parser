@@ -10,7 +10,7 @@ const COMMON_ENTITIES = {
   apos: "'",
 };
 
-export {
+module.exports = {
   STATIC_OPENING_TAG_REGEX,
   STATIC_CLOSING_TAG_REGEX,
   COMMON_ENTITIES,

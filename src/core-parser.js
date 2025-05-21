@@ -1,13 +1,13 @@
-import { handleIncompleteState } from "./state-processor.js";
-import {
+const { handleIncompleteState } = require("./state-processor.js");
+const {
   handleSpecialPrefixes,
   handleClosingTag,
   handleOpeningTag,
   handleFallbackText,
   handleTextNode,
-} from "./tag-handler.js";
+} = require("./tag-handler.js");
 
-export function coreProcessBuffer(parserContext) {
+function coreProcessBuffer(parserContext) {
   const textNodeName = parserContext.customOptions.textNodeName;
   const attributeNamePrefix =
     parserContext.customOptions.attributeNamePrefix !== undefined
@@ -85,3 +85,7 @@ export function coreProcessBuffer(parserContext) {
     }
   }
 }
+
+module.exports = {
+  coreProcessBuffer,
+};

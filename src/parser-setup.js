@@ -1,6 +1,6 @@
-import { DEFAULT_STREAM_OPTIONS } from './options.js';
+const { DEFAULT_STREAM_OPTIONS } = require('./options.js');
 
-export function initializeParserOptions(parserContext, options) {
+function initializeParserOptions(parserContext, options) {
   const mergedOptions = { ...DEFAULT_STREAM_OPTIONS, ...options };
   parserContext.customOptions = mergedOptions;
 
@@ -44,7 +44,7 @@ export function initializeParserOptions(parserContext, options) {
   }
 }
 
-export function resetParserState(parserContext) {
+function resetParserState(parserContext) {
   parserContext.streamingBuffer = "";
   parserContext._activelyStreaming = false;
   parserContext.accumulator = [];
@@ -62,3 +62,8 @@ export function resetParserState(parserContext) {
   parserContext._treatAsPlainText = false;
   parserContext._rootTagDecisionMade = false;
 }
+
+module.exports = {
+  initializeParserOptions,
+  resetParserState,
+};

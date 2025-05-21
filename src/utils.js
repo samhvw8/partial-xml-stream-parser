@@ -9,7 +9,7 @@ const XML_ENTITY_REGEX = /&(lt|gt|amp|quot|apos|#(\d+)|#x([\da-fA-F]+));/g;
  * @param {Object<string, string>} commonEntities - Map of entity names to their values
  * @returns {string} The decoded text
  */
-export function decodeXmlEntities(text, commonEntities) {
+function decodeXmlEntities(text, commonEntities) {
   if (typeof text !== "string") return text;
   
   return text.replace(
@@ -38,7 +38,7 @@ const BOOLEAN_VALUES = {
  * @param {string} value - The value to parse
  * @returns {boolean|number|string} The parsed primitive value or original string
  */
-export function tryParsePrimitive(value) {
+function tryParsePrimitive(value) {
   if (typeof value !== "string") return value;
 
   // Fast boolean lookup
@@ -69,7 +69,7 @@ export function tryParsePrimitive(value) {
  * @param {Object} commonEntitiesForDecode - Common XML entities map
  * @returns {Object} Parsed attributes object
  */
-export function parseAttributes(
+function parseAttributes(
   attributesString,
   attributeNamePrefix,
   customOptions,
@@ -102,3 +102,11 @@ export function parseAttributes(
 
   return attrs;
 }
+
+module.exports = {
+  decodeXmlEntities,
+  tryParsePrimitive,
+  parseAttributes,
+  XML_ENTITY_REGEX, // Exporting for potential direct use or testing, though not typical
+  BOOLEAN_VALUES,   // Exporting for potential direct use or testing
+};

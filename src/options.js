@@ -7,4 +7,6 @@ const DEFAULT_STREAM_OPTIONS = {
   parsePrimitives: false, // If true, attempts to parse numbers and booleans
 };
 
-export { DEFAULT_STREAM_OPTIONS };
+module.exports = {
+  DEFAULT_STREAM_OPTIONS,
+};
