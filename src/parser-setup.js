@@ -60,7 +60,7 @@ function resetParserState(parserContext) {
   parserContext._rootDeterminationBuffer = "";
   parserContext._plainTextAccumulator = "";
   parserContext._treatAsPlainText = false;
-  parserContext._rootTagDecisionMade = false;
+  parserContext._initialSegmentTypeDecided = false; // Renamed from _rootTagDecisionMade
 }
 
 module.exports = {

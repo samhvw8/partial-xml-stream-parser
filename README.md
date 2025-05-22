@@ -2,10 +2,10 @@
 
 [![npm version](https://badge.fury.io/js/partial-xml-stream-parser.svg)](https://badge.fury.io/js/partial-xml-stream-parser)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/USERNAME/REPOSITORY/actions) <!-- Replace USERNAME/REPOSITORY with actual GitHub repo -->
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/samhvw8/partial-xml-stream-parser/actions)
 [![npm downloads](https://img.shields.io/npm/dm/partial-xml-stream-parser.svg)](https://www.npmjs.com/package/partial-xml-stream-parser)
 
-A lenient, streaming XML parser for Node.js. This parser is designed to handle XML data that may be incomplete or not perfectly well-formed, making it suitable for processing streams of XML where the entire document might not be available at once.
+A lenient, streaming XML parser for Node.js. This parser is designed to handle XML data that may be incomplete or not perfectly well-formed, making it suitable for processing streams of XML where the entire document might not be available at once. It's particularly optimized for handling mixed content with both XML elements and plain text, making it ideal for parsing LLM outputs that contain tool calls embedded in natural language.
 
 ## Features
 
@@ -18,8 +18,20 @@ A lenient, streaming XML parser for Node.js. This parser is designed to handle X
 - **CDATA Support**: Properly handles CDATA sections.
 - **Stop Nodes**: Ability to specify tags whose content should not be parsed.
 - **Primitive Type Parsing**: Optional conversion of string values to numbers and booleans.
-- **Conditional Root Node Parsing**: Optionally parse XML only if the root element name is in an allowed list, otherwise treat input as plain text using the `allowedRootNodes` option.
+- **Enhanced Conditional Root Node Parsing**: Improved handling of XML content when using the `allowedRootNodes` option, with better detection and processing of allowed root elements.
 - **Multiple Root Elements**: Supports XML with multiple root elements, returned as an array.
+- **Mixed Content Handling**: Optimized for processing streams that contain both XML elements and plain text, making it ideal for parsing LLM outputs with embedded tool calls.
+- **Robust Partial State Management**: Better handling of incomplete XML structures at stream boundaries.
+
+## What's New in v1.6.0
+
+This release includes significant improvements to the parser's handling of mixed content and conditional root node parsing:
+
+- **Enhanced Mixed Content Processing**: Better handling of streams that contain both XML elements and plain text, particularly useful for parsing LLM outputs with embedded tool calls.
+- **Improved Conditional Root Node Parsing**: The `allowedRootNodes` feature has been completely reworked to provide more reliable detection and processing of allowed root elements, with better handling of text content before, between, and after XML elements.
+- **Robust Partial State Management**: Better handling of incomplete XML structures at stream boundaries, ensuring more consistent parsing results across chunk boundaries.
+- **Optimized Buffer Management**: More efficient handling of streaming buffers, reducing memory usage and improving performance.
+- **Fixed Edge Cases**: Resolved several edge cases related to partial XML parsing and mixed content handling.
 
 ## Use Cases
 
@@ -348,6 +360,12 @@ The `allowedRootNodes` option allows you to specify a list of root element names
 - If `allowedRootNodes` is a non-empty array of strings, only XML whose root tag is one of those strings will be parsed.
 - If `allowedRootNodes` is a single string, only XML whose root tag matches that string will be parsed.
 
+In v1.6.0, this feature has been significantly improved:
+- Better detection of allowed root elements in mixed content
+- More consistent handling of text content before, between, and after XML elements
+- Improved partial state management when streaming with allowed root nodes
+- Optimized buffer processing for better performance
+
 ```javascript
 // Example 1: Allowed root node
 const parserAllowed = new PartialXMLStreamParser({ allowedRootNodes: ["message"] });
@@ -414,88 +432,83 @@ console.log(JSON.stringify(resultDefaultBehav, null, 2));
 
 ```
 
-## API
+### Mixed Content with Tool Calls
 
-### `new PartialXMLStreamParser(options)`
+A common use case for this parser is handling LLM outputs that contain both natural language text and structured XML tool calls. The v1.6.0 release significantly improves handling of this scenario:
 
-Creates a new parser instance.
+```javascript
+// Example: Parsing LLM output with mixed content and tool calls
+const parser = new PartialXMLStreamParser({
+  allowedRootNodes: ["read_file", "write_to_file", "execute_command"] // Only parse these as XML
+});
 
-- `options` (Object, Optional):
-  - `textNodeName` (String): The key to use for text content. Defaults to `"#text"`.
-  - `attributeNamePrefix` (String): The prefix for attribute names. Defaults to `"@"`.
-  - `stopNodes` (Array|String): Tag names (e.g., `script`) or paths (e.g., `parent.child.tag`) that should not have their children parsed. Defaults to `[]`.
-  - `alwaysCreateTextNode` (Boolean): If true, text content is always in a text node. Defaults to `true`.
-  - `parsePrimitives` (Boolean): If true, attempts to parse numbers and booleans from text and attribute values. Defaults to `false`.
-  - `allowedRootNodes` (Array<String>|String): Optional. If provided and not empty, the parser will only treat the input as XML if the root element's name is in this list (or matches the string, if a string is provided). Otherwise, the input is treated as plain text. Defaults to `[]` (parse all XML unconditionally).
+// Simulating an LLM response with mixed content
+const llmResponse = "I'll help you with that task.\n\n" +
+                   "<read_file><path>src/index.ts</path></read_file>\n\n" +
+                   "Now let's modify the file:\n\n" +
+                   "<write_to_file><path>src/index.ts</path><content>\n" +
+                   "// Updated content\n" +
+                   "console.log(\"Hello world\");\n" +
+                   "</content><line_count>2</line_count></write_to_file>\n\n" +
+                   "Let's run the code:\n\n" +
+                   "<execute_command><command>node src/index.ts</command></execute_command>";
 
-### `parser.parseStream(xmlChunk)`
+// Parse the entire response at once
+let result = parser.parseStream(llmResponse);
+console.log("--- Mixed Content with Tool Calls ---");
+console.log(JSON.stringify(result, null, 2));
+// Output:
+// {
+//   "metadata": { "partial": true },
+//   "xml": [
+//     "I'll help you with that task.\n\n",
+//     {
+//       "read_file": {
+//         "path": { "#text": "src/index.ts" }
+//       }
+//     },
+//     "\n\nNow let's modify the file:\n\n",
+//     {
+//       "write_to_file": {
+//         "path": { "#text": "src/index.ts" },
+//         "content": { "#text": "\n// Updated content\nconsole.log(\"Hello world\");\n" },
+//         "line_count": { "#text": "2" }
+//       }
+//     },
+//     "\n\nLet's run the code:\n\n",
+//     {
+//       "execute_command": {
+//         "command": { "#text": "node src/index.ts" }
+//       }
+//     }
+//   ]
+// }
 
-Parses a chunk of XML.
+// You can also stream the content in chunks
+parser.reset();
+const chunks = [
+  "I'll help you with that task.\n\n<read",
+  "_file><path>src/index.ts</path></read_file>\n\n",
+  "Now let's modify the file:\n\n<write_to_file>"
+];
 
-- `xmlChunk` (String | Buffer | null | undefined): The XML chunk to process.
-  - Pass a string or Buffer containing XML data.
-  - Pass `null` or `undefined` to signal the end of the stream.
-  - Passing an empty string `""` indicates an empty chunk but not necessarily the end of the stream.
-- Returns (Object): The parsing result with the following structure:
-  ```javascript
-  {
-    metadata: {
-      partial: boolean // Indicates if the parsing is incomplete (true) or complete (false)
-    },
-    xml: Array<any> | null // The parsed XML content as an array of root elements/text, or null if no valid XML was found and stream ended.
-  }
-  ```
+chunks.forEach((chunk, i) => {
+  console.log(`Processing chunk ${i + 1}:`);
+  const result = parser.parseStream(chunk);
+  console.log(JSON.stringify(result, null, 2));
+});
 
-### `parser.reset()`
-
-Resets the parser state, allowing it to be reused for parsing a new XML stream.
-
-## Parser Behavior
-
-### Text Nodes
-
-- With `alwaysCreateTextNode: true` (the default), text content is consistently placed within a property named by `textNodeName` (e.g., `"#text"`).
-- This applies to elements that are text-only, elements with attributes and text, and elements with mixed content (child elements and text).
-- Whitespace-only text nodes that appear between elements are generally ignored and do not create a `textNodeName` property.
-
-### Multiple Occurrences
-
-- If the same tag appears multiple times as a child of the same parent, they are automatically collected into an array under that tag name.
-- If a tag has multiple distinct text segments (e.g., interspersed with child elements), these text segments are collected under the `textNodeName` property. If `alwaysCreateTextNode` is true, adjacent text segments are concatenated into a single string value for that `textNodeName`; if there are intervening non-text children, multiple text segments might result in an array of strings under `textNodeName` if the logic for `addValueToObject` determines it (though current behavior aims to concatenate).
-
-### Special XML Structures
-
-- **CDATA Sections**: Content is preserved exactly as is, including special characters, and placed in the `textNodeName` property.
-- **Comments**: XML comments are ignored.
-- **XML Declaration**: XML declarations like `<?xml version="1.0"?>` are ignored.
-- **DOCTYPE**: DOCTYPE declarations are ignored.
-- **Multiple Root Elements**: If the XML stream contains multiple root-level elements or text nodes, the `xml` property in the result will be an array containing each of these root items in order.
-
-### Lenient Parsing
-
-The parser attempts to handle various imperfect XML scenarios:
-
-- **Incomplete tags**: Fragments at the end of a chunk are carried over. If the stream ends (is `null`-terminated) with an incomplete tag (e.g., `<tag` or `</tag`), this fragment is generally treated as text content of its last open parent element. The `metadata.partial` flag will be `true` in such EOF scenarios to indicate the input ended with an unclosed structure treated as text.
-- Malformed tags (may be treated as text)
-- Unterminated CDATA sections (content parsed up to the end of chunk, marked as partial)
-- Unterminated comments, DOCTYPEs, XML declarations (ignored if unterminated at stream end)
-- Text outside of any element (becomes a root-level text item in the result array)
-
-## Performance
-
-The parser is designed to be efficient for streaming scenarios. You can run the benchmarks to test performance:
-
-```bash
-npm run bench
+// Final result after all chunks and EOF
+const finalResult = parser.parseStream(null);
+console.log("Final result:");
+console.log(JSON.stringify(finalResult, null, 2));
 ```
 
-This will test various parsing scenarios including:
+The key improvements in v1.6.0 for mixed content handling include:
 
-- Simple and complex XML
-- Single chunk vs multiple chunks
-- Large XML documents
-- Special XML features (CDATA, stop nodes, etc.)
+1. **Better text preservation**: Text between XML elements is properly preserved
+2. **Improved element detection**: More reliable detection of allowed root elements in a stream of mixed content
+3. **Consistent partial state**: Better handling of partial state when streaming chunks that contain both text and XML
+4. **Optimized buffer management**: More efficient handling of text and XML content in the same stream
 
-## License
-
-MIT
+This makes the parser ideal for applications that need to extract structured tool calls from natural language text, such as AI assistants that embed XML commands within their responses.

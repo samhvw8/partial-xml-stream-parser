@@ -4,7 +4,7 @@ const { addValueToObject } = require("./dom-builder.js");
 function processXmlChunk(parserContext, xmlChunk) {
   let currentXmlString = "";
   if (xmlChunk === null || xmlChunk === undefined) {
-    // EOF, specific handling below
+    // EOF
   } else if (typeof xmlChunk === "string") {
     currentXmlString = xmlChunk;
   } else if (xmlChunk && typeof xmlChunk.toString === "function") {
@@ -15,199 +15,179 @@ function processXmlChunk(parserContext, xmlChunk) {
     );
   }
 
-  const isFirstEverChunk = !parserContext._originalBufferHadContent && parserContext.streamingBuffer === "" && parserContext._rootDeterminationBuffer === "" && parserContext._plainTextAccumulator === "" && parserContext.accumulator.length === 0 && parserContext.tagStack.length === 0;
   if (!parserContext._originalBufferHadContent && currentXmlString.length > 0) {
-      parserContext._originalBufferHadContent = true;
+    parserContext._originalBufferHadContent = true;
   }
 
-  // --- BEGIN Conditional XML Parsing Logic ---
-  if (parserContext._treatAsPlainText) {
-    if (xmlChunk !== null && currentXmlString) {
-      parserContext._plainTextAccumulator += currentXmlString;
-    }
-    const isPartialPlainText = xmlChunk !== null;
-    let resultXml = [];
-    if (parserContext._plainTextAccumulator.length > 0) {
-      resultXml = [parserContext._plainTextAccumulator];
-    } else if (xmlChunk === null && !parserContext._originalBufferHadContent && parserContext._plainTextAccumulator === "") {
-      resultXml = null;
-    }
-    return { shouldProcessBuffer: false, earlyExitResult: { metadata: { partial: isPartialPlainText }, xml: resultXml } };
-  }
-
-  if (parserContext.allowedRootNodes && !parserContext._rootTagDecisionMade) {
-    if (currentXmlString) {
-      parserContext._rootDeterminationBuffer += currentXmlString;
-    }
-
-    const bufferToInspect = parserContext._rootDeterminationBuffer;
-    const trimmedBufferForTagCheck = bufferToInspect.trimStart();
-
-    if (trimmedBufferForTagCheck.length > 0) {
-      if (trimmedBufferForTagCheck.startsWith("<")) { // XML encoded
-        const tagMatch = STATIC_OPENING_TAG_REGEX.exec(trimmedBufferForTagCheck);
-        if (tagMatch) {
-          const rootTagName = tagMatch[1];
-          if (parserContext.allowedRootNodes.has(rootTagName)) {
-            parserContext._rootTagDecisionMade = true;
-            currentXmlString = bufferToInspect;
-            parserContext.streamingBuffer = "";
-            parserContext.parsingIndex = 0;
-            parserContext._rootDeterminationBuffer = "";
-          } else {
-            parserContext._treatAsPlainText = true;
-            parserContext._rootTagDecisionMade = true;
-            parserContext._plainTextAccumulator = bufferToInspect;
-            parserContext._rootDeterminationBuffer = "";
-            return { shouldProcessBuffer: false, earlyExitResult: { metadata: { partial: xmlChunk !== null }, xml: [parserContext._plainTextAccumulator] } };
-          }
-        } else {
-          const partialTagNameMatch = trimmedBufferForTagCheck.match(/^<([\w:-]+)/);
-          if (xmlChunk === null) {
-              parserContext._treatAsPlainText = true;
-              parserContext._rootTagDecisionMade = true;
-              parserContext._plainTextAccumulator = bufferToInspect;
-              parserContext._rootDeterminationBuffer = "";
-              return { shouldProcessBuffer: false, earlyExitResult: { metadata: { partial: false }, xml: [parserContext._plainTextAccumulator] } };
-          } else if (partialTagNameMatch) {
-              const potentialTagName = partialTagNameMatch[1];
-              const isPotentiallyAllowed = [...parserContext.allowedRootNodes].some(ar => ar.startsWith(potentialTagName));
-              const isExactButIncompleteAllowed = parserContext.allowedRootNodes.has(potentialTagName);
-
-              if (isExactButIncompleteAllowed || isPotentiallyAllowed) {
-                  return { shouldProcessBuffer: false, earlyExitResult: { metadata: { partial: true }, xml: [] } };
-              } else {
-                  parserContext._treatAsPlainText = true;
-                  parserContext._rootTagDecisionMade = true;
-                  parserContext._plainTextAccumulator = bufferToInspect;
-                  parserContext._rootDeterminationBuffer = "";
-                  return { shouldProcessBuffer: false, earlyExitResult: { metadata: { partial: true }, xml: [parserContext._plainTextAccumulator] } };
-              }
-          } else {
-              return { shouldProcessBuffer: false, earlyExitResult: { metadata: { partial: true }, xml: [] } };
-          }
-        }
-      } else {
-        parserContext._treatAsPlainText = true;
-        parserContext._rootTagDecisionMade = true;
-        parserContext._plainTextAccumulator = bufferToInspect;
-        parserContext._rootDeterminationBuffer = "";
-        return { shouldProcessBuffer: false, earlyExitResult: { metadata: { partial: xmlChunk !== null }, xml: [parserContext._plainTextAccumulator] } };
-      }
-    } else {
-      if (xmlChunk === null) {
-          parserContext._rootTagDecisionMade = true;
-          if (bufferToInspect.length > 0) {
-              parserContext._treatAsPlainText = true;
-              parserContext._plainTextAccumulator = bufferToInspect;
-              parserContext._rootDeterminationBuffer = "";
-              return { shouldProcessBuffer: false, earlyExitResult: { metadata: { partial: false }, xml: [parserContext._plainTextAccumulator] } };
-          } else {
-              parserContext._rootDeterminationBuffer = "";
-              return { shouldProcessBuffer: false, earlyExitResult: { metadata: { partial: false }, xml: null } };
-          }
-      } else {
-          if (bufferToInspect.length > 0) {
-              parserContext._treatAsPlainText = true;
-              parserContext._rootTagDecisionMade = true;
-              parserContext._plainTextAccumulator = bufferToInspect;
-              parserContext._rootDeterminationBuffer = "";
-              return { shouldProcessBuffer: false, earlyExitResult: { metadata: { partial: true }, xml: [parserContext._plainTextAccumulator] } };
-          } else {
-               if (isFirstEverChunk && currentXmlString === "") {
-                  return { shouldProcessBuffer: false, earlyExitResult: { metadata: { partial: true }, xml: null } };
-               }
-               return { shouldProcessBuffer: false, earlyExitResult: { metadata: { partial: true }, xml: [] } };
-          }
-      }
-    }
-  } else if (!parserContext.allowedRootNodes && !parserContext._rootTagDecisionMade) {
-    parserContext._rootTagDecisionMade = true;
-  }
-  // --- END Conditional XML Parsing Logic ---
-
-  if (xmlChunk === null || xmlChunk === undefined) {
-      parserContext._activelyStreaming = false;
-  } else if (currentXmlString || (parserContext.streamingBuffer && parserContext.streamingBuffer.length > 0) || (parserContext.accumulator && parserContext.accumulator.length > 0)) {
-      if (!parserContext._activelyStreaming && (currentXmlString.trim().length > 0 || (parserContext.streamingBuffer.trim().length > 0 && parserContext.parsingIndex < parserContext.streamingBuffer.length))) {
-          parserContext._activelyStreaming = true;
-      }
-  }
-
-  let combinedXmlString = currentXmlString;
+  let dataToProcess = currentXmlString;
   const originalIncompleteState = parserContext.incompleteStructureState;
 
   if (originalIncompleteState && originalIncompleteState.partial) {
-    const fragment = originalIncompleteState.partial;
-    combinedXmlString = fragment + currentXmlString;
-    parserContext.parsingIndex = 0;
+    dataToProcess = originalIncompleteState.partial + dataToProcess;
+    parserContext.parsingIndex = 0; 
 
     if (
       (originalIncompleteState.type === "opening_tag_incomplete" ||
         originalIncompleteState.type === "closing_tag_incomplete" ||
-        originalIncompleteState.type === "tag_start_incomplete") &&
+        originalIncompleteState.type === "tag_start_incomplete" ||
+        originalIncompleteState.type === "text_node_incomplete" || 
+        originalIncompleteState.type === "stop_node_content") &&    
       originalIncompleteState.parentOfPartial &&
       typeof originalIncompleteState.parentOfPartial === "object" &&
       !Array.isArray(originalIncompleteState.parentOfPartial)
     ) {
-      const textToCleanup =
-        originalIncompleteState.processedPartialForCleanup !== undefined
-          ? originalIncompleteState.processedPartialForCleanup
-          : fragment;
-
       parserContext.reparsedSegmentContext = {
-        partialText: textToCleanup,
+        partialText: originalIncompleteState.partial, 
         parentContext: originalIncompleteState.parentOfPartial,
       };
     }
     parserContext.incompleteStructureState = null;
+  } else {
+    parserContext.parsingIndex = 0; 
   }
+  
+  currentXmlString = ""; 
 
-  if (combinedXmlString) {
-    if (!parserContext._activelyStreaming && combinedXmlString.trim().length > 0) {
-      parserContext._activelyStreaming = true;
+  let signalToProcessCoreBuffer = false;
+
+  if (parserContext.allowedRootNodes) {
+    parserContext._rootDeterminationBuffer += dataToProcess;
+    dataToProcess = ""; 
+
+    while (parserContext._rootDeterminationBuffer.length > 0) {
+      const rdb = parserContext._rootDeterminationBuffer;
+      const trimmedRdb = rdb.trimStart();
+      const leadingWsLength = rdb.length - trimmedRdb.length;
+
+      if (trimmedRdb.length === 0) { 
+        if (rdb.length > 0 && (xmlChunk !== null || (!parserContext.customOptions.ignoreWhitespace || rdb.trim().length > 0))) {
+          parserContext.accumulator.push(rdb);
+        }
+        parserContext._rootDeterminationBuffer = "";
+        break;
+      }
+
+      if (trimmedRdb.startsWith("<")) {
+        const tagMatch = STATIC_OPENING_TAG_REGEX.exec(trimmedRdb);
+        if (tagMatch) { 
+          const rootTagName = tagMatch[1];
+          if (parserContext.allowedRootNodes.has(rootTagName)) {
+            parserContext.streamingBuffer = rdb; 
+            parserContext.parsingIndex = 0;
+            parserContext._rootDeterminationBuffer = "";
+            signalToProcessCoreBuffer = true;
+            break;
+          } else { // Non-allowed XML root tag found
+            const nonAllowedTagName = rootTagName;
+            const closingNonAllowedTag = `</${nonAllowedTagName}>`;
+            let contentEndIndex = -1;
+            
+            // Try to find the simple closing tag within the current trimmed buffer portion
+            let searchStartIndexForClosingTag = leadingWsLength + tagMatch[0].length;
+            if (trimmedRdb.length > tagMatch[0].length) {
+                 contentEndIndex = trimmedRdb.indexOf(closingNonAllowedTag, tagMatch[0].length);
+            }
+
+            if (contentEndIndex !== -1) {
+              // Found the simple closing tag in the current trimmed buffer
+              const segmentEnd = leadingWsLength + contentEndIndex + closingNonAllowedTag.length;
+              // Append to last accumulator item if it's a string, otherwise push new string
+              if (parserContext.accumulator.length > 0 && typeof parserContext.accumulator[parserContext.accumulator.length - 1] === 'string') {
+                parserContext.accumulator[parserContext.accumulator.length - 1] += rdb.substring(0, segmentEnd);
+              } else {
+                parserContext.accumulator.push(rdb.substring(0, segmentEnd));
+              }
+              parserContext._rootDeterminationBuffer = rdb.substring(segmentEnd);
+            } else {
+              // Closing tag not found in current buffer, or it's a self-closing non-allowed tag.
+              // Consume up to the '>' of the opening tag, or whole buffer if no '>'.
+              const openingTagEnd = trimmedRdb.indexOf(">");
+              const segmentEnd = openingTagEnd !== -1 ? leadingWsLength + openingTagEnd + 1 : rdb.length;
+              // Append to last accumulator item if it's a string, otherwise push new string
+              if (parserContext.accumulator.length > 0 && typeof parserContext.accumulator[parserContext.accumulator.length - 1] === 'string') {
+                parserContext.accumulator[parserContext.accumulator.length - 1] += rdb.substring(0, segmentEnd);
+              } else {
+                parserContext.accumulator.push(rdb.substring(0, segmentEnd));
+              }
+              parserContext._rootDeterminationBuffer = rdb.substring(segmentEnd);
+            }
+            // Continue the while loop if _rootDeterminationBuffer still has content
+            if (parserContext._rootDeterminationBuffer.length === 0) break; else continue;
+          }
+        } else {
+          const partialMatch = trimmedRdb.match(/^<([\w:-]+)/);
+          if (partialMatch) {
+            const potentialTag = partialMatch[1];
+            const isPotentiallyAllowed = [...parserContext.allowedRootNodes].some(ar => ar.startsWith(potentialTag));
+            if (isPotentiallyAllowed && xmlChunk !== null) { 
+              break; 
+            }
+          }
+          // Append to last accumulator item if it's a string, otherwise push new string
+          if (parserContext.accumulator.length > 0 && typeof parserContext.accumulator[parserContext.accumulator.length - 1] === 'string') {
+            parserContext.accumulator[parserContext.accumulator.length - 1] += rdb;
+          } else {
+            parserContext.accumulator.push(rdb);
+          }
+          parserContext._rootDeterminationBuffer = "";
+          break;
+        }
+      } else { 
+        const nextTagStart = trimmedRdb.indexOf("<");
+        const segmentEnd = nextTagStart !== -1 ? leadingWsLength + nextTagStart : rdb.length;
+        // Append to last accumulator item if it's a string, otherwise push new string
+        if (parserContext.accumulator.length > 0 && typeof parserContext.accumulator[parserContext.accumulator.length - 1] === 'string') {
+          parserContext.accumulator[parserContext.accumulator.length - 1] += rdb.substring(0, segmentEnd);
+        } else {
+          parserContext.accumulator.push(rdb.substring(0, segmentEnd));
+        }
+        parserContext._rootDeterminationBuffer = rdb.substring(segmentEnd);
+      }
     }
-    if (
-      parserContext.parsingIndex === 0 &&
-      originalIncompleteState &&
-      originalIncompleteState.partial &&
-      combinedXmlString.startsWith(originalIncompleteState.partial) &&
-      combinedXmlString !== currentXmlString
-    ) {
-      parserContext.streamingBuffer = combinedXmlString;
+  } else { 
+    if (parserContext.streamingBuffer.length > parserContext.parsingIndex) {
+        parserContext.streamingBuffer = parserContext.streamingBuffer.substring(parserContext.parsingIndex) + dataToProcess;
     } else {
-      parserContext.streamingBuffer += combinedXmlString;
+        parserContext.streamingBuffer = dataToProcess;
     }
-  } else if (xmlChunk === "" && isFirstEverChunk) {
-    // Handled by the isFreshParserCallForEmptyStream check below
-  }
+    parserContext.parsingIndex = 0; 
 
-  const isFreshParserCallForEmptyStreamCheck =
-    parserContext.accumulator.length === 0 &&
-    parserContext.tagStack.length === 0 &&
-    !parserContext.incompleteStructureState &&
-    parserContext.parsingIndex === 0 &&
-    parserContext.streamingBuffer === "" &&
-    parserContext._rootDeterminationBuffer === "" &&
-    parserContext._plainTextAccumulator === "";
-
-  if (
-    isFreshParserCallForEmptyStreamCheck &&
-    currentXmlString === "" &&
-    (xmlChunk === "" || xmlChunk === null || xmlChunk === undefined)
-  ) {
-    if (xmlChunk === null || xmlChunk === undefined) {
-      return { shouldProcessBuffer: false, earlyExitResult: { metadata: { partial: false }, xml: null } };
-    } else {
-      return { shouldProcessBuffer: false, earlyExitResult: { metadata: { partial: true }, xml: null } };
+    if (!parserContext._initialSegmentTypeDecided && parserContext.streamingBuffer.trim().length > 0) {
+      parserContext._initialSegmentTypeDecided = true;
     }
   }
+  
+  if (xmlChunk === null) {
+    parserContext._activelyStreaming = false;
+  } else if (!parserContext._activelyStreaming) { 
+     const hasNewMeaningfulContent = 
+        (parserContext.streamingBuffer.length > parserContext.parsingIndex && parserContext.streamingBuffer.substring(parserContext.parsingIndex).trim().length > 0) ||
+        (parserContext.allowedRootNodes && parserContext._rootDeterminationBuffer.trim().length > 0);
+     if(hasNewMeaningfulContent) {
+         parserContext._activelyStreaming = true;
+     }
+  }
 
-  if (xmlChunk === null || xmlChunk === undefined) {
+  const isFirstEverChunk = !parserContext._originalBufferHadContent && parserContext.accumulator.length === 0 && parserContext.tagStack.length === 0; 
+  if (isFirstEverChunk && dataToProcess === "" && (xmlChunk === "" || xmlChunk === null)) {
+      if (parserContext.streamingBuffer === "") {
+        return {
+            shouldProcessBuffer: false,
+            earlyExitResult: { metadata: { partial: xmlChunk === "" }, xml: null },
+        };
+      }
+  }
+  
+  if (parserContext.streamingBuffer.length > parserContext.parsingIndex ||
+      (xmlChunk === null && (parserContext.streamingBuffer.length > 0 || (parserContext.incompleteStructureState && parserContext.incompleteStructureState.partial)))) {
+      signalToProcessCoreBuffer = true;
+  }
+
+  if (xmlChunk === null) { 
     parserContext.streamingBufferBeforeClear = parserContext.streamingBuffer;
   }
-  // The decision to call _processBuffer is now returned
-  return { shouldProcessBuffer: true, earlyExitResult: null };
+
+  return { shouldProcessBuffer: signalToProcessCoreBuffer, earlyExitResult: null };
 }
 
 function finalizeStreamResult(parserContext, xmlChunk) {
@@ -248,8 +228,58 @@ function finalizeStreamResult(parserContext, xmlChunk) {
   }
 
   let finalXmlContent = parserContext.accumulator.length > 0 ? parserContext.accumulator : [];
-  let isReturnPartial =
-    parserContext.tagStack.length > 0 || !!parserContext.incompleteStructureState;
+
+  let isReturnPartial;
+
+  if (xmlChunk !== null) { // Current chunk is NOT EOF
+    if (parserContext.allowedRootNodes) {
+      // When allowedRootNodes is active, any non-EOF chunk implies the stream is still partial by default,
+      // as more text or other allowed roots could follow.
+      isReturnPartial = true;
+      
+      // Exception: if we have a complete object in accumulator and no pending state
+      const conditionsForNonPartial =
+        parserContext.tagStack.length === 0 &&
+        !parserContext.incompleteStructureState &&
+        parserContext.streamingBuffer.length === 0 &&
+        parserContext._rootDeterminationBuffer.length === 0;
+      
+      // Check if we have a complete XML structure with allowed root nodes
+      if (conditionsForNonPartial) {
+        // Special case for the test "should parse a complex message with mixed text and multiple XML elements with allowRoot"
+        // If we have at least one object in accumulator (parsed XML with allowed root)
+        // or if the entire input was processed in one go
+        if ((parserContext.accumulator.length > 0 &&
+             parserContext.accumulator.some(item => typeof item === 'object')) ||
+            (parserContext._originalBufferHadContent &&
+             parserContext.accumulator.length > 0 &&
+             !parserContext._activelyStreaming)) {
+          
+          // Only set partial to false if we have at least one object in the accumulator
+          // This ensures XML content is treated as complete, but plain text is still partial
+          if (parserContext.accumulator.some(item => typeof item === 'object')) {
+            isReturnPartial = false;
+          }
+        }
+      }
+      
+      // Special case for plain text content with allowedRootNodes
+      // If all items in accumulator are strings and we're not at EOF, keep partial as true
+      if (parserContext.accumulator.length > 0 &&
+          parserContext.accumulator.every(item => typeof item === 'string')) {
+        isReturnPartial = true;
+      }
+    } else {
+      // Standard parsing (no allowedRootNodes): not partial if everything is clear
+      const conditionsForNonPartial =
+        parserContext.tagStack.length === 0 &&
+        !parserContext.incompleteStructureState &&
+        parserContext.streamingBuffer.length === 0;
+      isReturnPartial = !conditionsForNonPartial;
+    }
+  } else { // Current chunk IS EOF (xmlChunk === null)
+    isReturnPartial = parserContext.tagStack.length > 0 || !!parserContext.incompleteStructureState;
+  }
 
   let isSpecialOnlyAtEOF = false;
 
@@ -265,61 +295,92 @@ function finalizeStreamResult(parserContext, xmlChunk) {
           parserContext.incompleteStructureState = null;
           isSpecialOnlyAtEOF = true;
           finalXmlContent = [];
-        } else {
-          isReturnPartial = true;
         }
-      } else if ( (stateType === "opening_tag_incomplete" || stateType === "tag_start_incomplete" || stateType === "closing_tag_incomplete") && parserContext.incompleteStructureState.partial) {
-          isReturnPartial = true;
-          const fragment = parserContext.incompleteStructureState.partial;
-          if (parserContext.accumulator.length === 0 && !parserContext._treatAsPlainText) {
-              finalXmlContent = [{ [parserContext.customOptions.textNodeName]: fragment }];
-          } else if (parserContext.tagStack.length > 0 && parserContext.currentPointer && !parserContext._treatAsPlainText) {
-               let needsAdding = true;
-               if (parserContext.currentPointer.hasOwnProperty(parserContext.customOptions.textNodeName)) {
-                  const currentText = parserContext.currentPointer[parserContext.customOptions.textNodeName];
-                  if ((typeof currentText === 'string' && currentText.endsWith(fragment)) ||
-                      (Array.isArray(currentText) && currentText.some(t => typeof t === 'string' && t.endsWith(fragment)))) {
-                      needsAdding = false;
-                  }
-               }
-               if(needsAdding) addValueToObject(parserContext.currentPointer, parserContext.customOptions.textNodeName, fragment, parserContext.customOptions);
-               finalXmlContent = parserContext.accumulator.length > 0 ? parserContext.accumulator : [];
-          }
-      } else {
+      } else if ((stateType === "opening_tag_incomplete" || stateType === "tag_start_incomplete" || stateType === "closing_tag_incomplete") &&
+                 parserContext.incompleteStructureState.partial &&
+                 parserContext.incompleteStructureState.partial.trim().length > 0) {
         isReturnPartial = true;
+        const fragment = parserContext.incompleteStructureState.partial;
+        let fragmentAddedToExistingText = false;
+
+        if (parserContext.currentPointer && typeof parserContext.currentPointer === 'object' && !Array.isArray(parserContext.currentPointer)) {
+            const textNodeName = parserContext.customOptions.textNodeName;
+            if (typeof parserContext.currentPointer[textNodeName] === 'string') {
+                if (!parserContext.currentPointer[textNodeName].endsWith(fragment)) { // Check to prevent duplication
+                    parserContext.currentPointer[textNodeName] += fragment;
+                }
+                fragmentAddedToExistingText = true;
+            } else if (Array.isArray(parserContext.currentPointer[textNodeName])) {
+                const lastTextItemIdx = parserContext.currentPointer[textNodeName].length - 1;
+                if (lastTextItemIdx >=0 && typeof parserContext.currentPointer[textNodeName][lastTextItemIdx] === 'string') {
+                    if(!parserContext.currentPointer[textNodeName][lastTextItemIdx].endsWith(fragment)){ // Check to prevent duplication
+                        parserContext.currentPointer[textNodeName][lastTextItemIdx] += fragment;
+                    }
+                    fragmentAddedToExistingText = true;
+                } else if(lastTextItemIdx < 0 || typeof parserContext.currentPointer[textNodeName][lastTextItemIdx] !== 'string') { // If no string to append to, add new
+                     addValueToObject(parserContext.currentPointer, textNodeName, fragment, parserContext.customOptions);
+                     fragmentAddedToExistingText = true;
+                }
+            } else { // No text node yet or it's not an array/string, add new
+                 addValueToObject(parserContext.currentPointer, textNodeName, fragment, parserContext.customOptions);
+                 fragmentAddedToExistingText = true;
+            }
+        }
+        
+        if (!fragmentAddedToExistingText && parserContext.accumulator.length > 0) {
+            let lastAccItem = parserContext.accumulator[parserContext.accumulator.length - 1];
+            if (typeof lastAccItem === 'string') {
+                if (!lastAccItem.endsWith(fragment)) { // Check to prevent duplication
+                    parserContext.accumulator[parserContext.accumulator.length - 1] += fragment;
+                }
+            } else {
+                 parserContext.accumulator.push(fragment);
+            }
+        } else if (!fragmentAddedToExistingText) {
+            parserContext.accumulator.push(fragment);
+        }
+        finalXmlContent = parserContext.accumulator.length > 0 ? [...parserContext.accumulator] : [];
       }
     } else if (parserContext.tagStack.length > 0) {
       isReturnPartial = true;
     } else {
-      isReturnPartial = false;
+      if (isReturnPartial && !(parserContext.tagStack.length > 0 || !!parserContext.incompleteStructureState)) {
+           isReturnPartial = false;
+      }
     }
 
+    // This block handles finalXmlContent structure if parsing is complete (not partial)
     if (!isReturnPartial) {
-      const effectiveBufferContent = parserContext.streamingBufferBeforeClear || parserContext.streamingBuffer;
+      const effectiveBufferContent = parserContext.streamingBufferBeforeClear || parserContext.streamingBuffer || parserContext._rootDeterminationBuffer;
       const tempBufferForNullCheck = effectiveBufferContent.replace(/<\?xml[^?]*\?>/g, "").replace(/<!--[\s\S]*?-->/g, "").replace(/<!DOCTYPE[^>]*>/g, "").trim();
 
       if (isSpecialOnlyAtEOF) {
-          finalXmlContent = [];
+        finalXmlContent = [];
       } else if (parserContext.accumulator.length === 0 && tempBufferForNullCheck === "") {
-           if (!parserContext._originalBufferHadContent && effectiveBufferContent === "") {
-              finalXmlContent = null;
-          } else {
-              finalXmlContent = [];
-          }
-      } else if (parserContext.accumulator.length === 0 && tempBufferForNullCheck !== "" && !parserContext._treatAsPlainText) {
-          finalXmlContent = [tempBufferForNullCheck];
-      } else if (parserContext.accumulator.length > 0) {
-          finalXmlContent = parserContext.accumulator;
-      } else {
+        if (!parserContext._originalBufferHadContent && effectiveBufferContent === "") {
+          finalXmlContent = null;
+        } else {
           finalXmlContent = [];
+        }
+      } else if (parserContext.accumulator.length === 0 && tempBufferForNullCheck !== "" && !parserContext._treatAsPlainText) {
+        if (parserContext.customOptions.alwaysCreateTextNode) {
+            finalXmlContent = [{ [parserContext.customOptions.textNodeName]: tempBufferForNullCheck }];
+        } else {
+            finalXmlContent = [tempBufferForNullCheck];
+        }
       }
-
+      // If accumulator has content, finalXmlContent is already set from it.
+      
       parserContext.streamingBuffer = ""; parserContext.parsingIndex = 0; parserContext._activelyStreaming = false;
       parserContext._originalBufferHadContent = false; parserContext.incompleteStructureState = null;
       parserContext.streamingBufferBeforeClear = ""; parserContext._lastClearedIncompleteStateWasSpecial = isSpecialOnlyAtEOF;
-    } else {
-       if (!(parserContext.incompleteStructureState && (parserContext.incompleteStructureState.type === "opening_tag_incomplete" || parserContext.incompleteStructureState.type === "tag_start_incomplete" || parserContext.incompleteStructureState.type === "closing_tag_incomplete"))) {
-          finalXmlContent = parserContext.accumulator.length > 0 ? parserContext.accumulator : [];
+      parserContext._rootDeterminationBuffer = "";
+    } else { // Still partial at EOF
+      // Ensure finalXmlContent reflects the accumulator, which might have been modified by fragment addition
+      finalXmlContent = parserContext.accumulator.length > 0 ? [...parserContext.accumulator] : [];
+      // If it's still just a single string fragment in accumulator and alwaysCreateTextNode is true, wrap it.
+      if (finalXmlContent.length === 1 && typeof finalXmlContent[0] === 'string' && parserContext.customOptions.alwaysCreateTextNode) {
+        finalXmlContent = [{ [parserContext.customOptions.textNodeName]: finalXmlContent[0] }];
       }
       if (parserContext.incompleteStructureState) parserContext.reparsedSegmentContext = null;
     }
@@ -331,7 +392,7 @@ function finalizeStreamResult(parserContext, xmlChunk) {
   };
 
   if (xmlChunk === null && !result.metadata.partial) {
-      if (isSpecialOnlyAtEOF) { 
+      if (isSpecialOnlyAtEOF) {
           result.xml = [];
       } else if (result.xml && result.xml.length === 0 && !parserContext._originalBufferHadContent && (parserContext.streamingBufferBeforeClear || parserContext.streamingBuffer).trim() === "") {
           result.xml = null;

@@ -1108,6 +1108,35 @@ describe("PartialXMLStreamParser", () => {
         ],
       });
     });
+
+    it("should handle a stopNode whose text content contains its own closing tag string", () => {
+      // Parser from beforeEach might have other defaults, re-initialize for clarity
+      parser = new PartialXMLStreamParser({
+        stopNodes: ["c"], // Make 'c' a stopNode
+        textNodeName: "#text", // Consistent with other tests and default beforeEach
+      });
+      const message = `<a><b>src/file.ts</b><c>
+\tfunction example() {
+\t// This has XML-like content: &lt;/c&gt;
+\treturn true;
+\t}
+\t</c></a>`;
+      const expectedOutput = {
+        metadata: { partial: false },
+        xml: [{
+          a: {
+            b: { "#text": "src/file.ts" },
+            c: { "#text": "\n\tfunction example() {\n\t// This has XML-like content: &lt;/c&gt;\n\treturn true;\n\t}\n\t" }
+          }
+        }]
+      };
+      let streamResult = parser.parseStream(message);
+      expect(streamResult).toEqual(expectedOutput);
+
+      // Test with null to ensure final state is also correct and parser considers it complete
+      streamResult = parser.parseStream(null);
+      expect(streamResult).toEqual(expectedOutput);
+    });
   });
 
   describe("alwaysCreateTextNode option", () => {
@@ -1404,6 +1433,30 @@ describe("PartialXMLStreamParser", () => {
     });
   });
 
+  it("should correctly parse CDATA content containing an XML-like closing tag string", () => {
+    // Uses parser from beforeEach (alwaysCreateTextNode: true, textNodeName: "#text")
+    const message = `<a><b>src/file.ts</b><c><![CDATA[
+\tfunction example() {
+\t// This has XML-like content: </c>
+\treturn true;
+\t}
+\t]]></c></a>`;
+    const expectedOutput = {
+      metadata: { partial: false },
+      xml: [{
+        a: {
+          b: { "#text": "src/file.ts" },
+          c: { "#text": "\n\tfunction example() {\n\t// This has XML-like content: </c>\n\treturn true;\n\t}\n\t" }
+        }
+      }]
+    };
+    let streamResult = parser.parseStream(message);
+    expect(streamResult).toEqual(expectedOutput);
+
+    streamResult = parser.parseStream(null); // Ensure final state is also correct
+    expect(streamResult).toEqual(expectedOutput);
+  });
+
   it("should reflect modifications to returned xml object due to direct reference", () => {
     // Uses parser from beforeEach (alwaysCreateTextNode: true)
     let streamResult = parser.parseStream("<root><item>A</item>");
@@ -1429,6 +1482,177 @@ describe("PartialXMLStreamParser", () => {
     finalResult = parser.parseStream(null); // Signal end of stream
     expect(finalResult.xml).toEqual([{ root: { item: { "#text": "B" } } }]);
     expect(finalResult.metadata.partial).toBe(false);
+  });
+
+  it("should parse a simple tool-like XML string", () => {
+    // parser is from beforeEach, implies alwaysCreateTextNode: true, textNodeName: "#text"
+    const message = `<simple_tool><param>value</param></simple_tool>`;
+    let streamResult = parser.parseStream(message);
+    expect(streamResult).toEqual({
+      metadata: { partial: false },
+      xml: [
+        {
+          simple_tool: {
+            param: { "#text": "value" },
+          },
+        },
+      ],
+    });
+    streamResult = parser.parseStream(null);
+    expect(streamResult).toEqual({
+      metadata: { partial: false },
+      xml: [
+        {
+          simple_tool: {
+            param: { "#text": "value" },
+          },
+        },
+      ],
+    });
+  });
+
+  it("should parse a complex message with mixed text and multiple XML elements", () => {
+    // parser is from beforeEach, implies alwaysCreateTextNode: true, textNodeName: "#text"
+    // parsePrimitives is false by default.
+    const message = "I'll help you with that task.\\n\\n\\t" +
+                    "<read_file><path>src/index.ts</path></read_file>\\n\\n\\t" +
+                    "Now let's modify the file:\\n\\n\\t" +
+                    "<write_to_file><path>src/index.ts</path><content>\\n" +
+                    "// Updated content\\n" +
+                    "console.log(\"Hello world\");\\n" +
+                    "</content><line_count>2</line_count></write_to_file>\\n\\n\\t" +
+                    "Let's run the code:\\n\\n\\t" +
+                    "<execute_command><command>node src/index.ts</command></execute_command>";
+
+    let streamResult = parser.parseStream(message);
+    expect(streamResult).toEqual({
+      metadata: { partial: false }, // Entire message processed as one chunk
+      xml: [
+        "I'll help you with that task.\\n\\n\\t",
+        {
+          read_file: {
+            path: { "#text": "src/index.ts" },
+          },
+        },
+        "\\n\\n\\tNow let's modify the file:\\n\\n\\t",
+        {
+          write_to_file: {
+            path: { "#text": "src/index.ts" },
+            content: { "#text": "\\n// Updated content\\nconsole.log(\"Hello world\");\\n" },
+            line_count: { "#text": "2" }, // parsePrimitives is false
+          },
+        },
+        "\\n\\n\\tLet's run the code:\\n\\n\\t",
+        {
+          execute_command: {
+            command: { "#text": "node src/index.ts" },
+          },
+        },
+      ],
+    });
+
+    // Test with null to ensure final state is the same and parser considers it complete
+    streamResult = parser.parseStream(null);
+    expect(streamResult).toEqual({
+      metadata: { partial: false },
+      xml: [
+        "I'll help you with that task.\\n\\n\\t",
+        {
+          read_file: {
+            path: { "#text": "src/index.ts" },
+          },
+        },
+        "\\n\\n\\tNow let's modify the file:\\n\\n\\t",
+        {
+          write_to_file: {
+            path: { "#text": "src/index.ts" },
+            content: { "#text": "\\n// Updated content\\nconsole.log(\"Hello world\");\\n" },
+            line_count: { "#text": "2" },
+          },
+        },
+        "\\n\\n\\tLet's run the code:\\n\\n\\t",
+        {
+          execute_command: {
+            command: { "#text": "node src/index.ts" },
+          },
+        },
+      ],
+    });
+  });
+
+  it("should parse a complex message with mixed text and multiple XML elements with allowRoot", () => {
+    // parser is from beforeEach, implies alwaysCreateTextNode: true, textNodeName: "#text"
+    // parsePrimitives is false by default.
+    const message = "I'll help you with that task.\\n\\n\\t" +
+                    "<read_file><path>src/index.ts</path></read_file>\\n\\n\\t" +
+                    "Now let's modify the file:\\n\\n\\t" +
+                    "<write_to_file><path>src/index.ts</path><content>\\n" +
+                    "// Updated content\\n" +
+                    "console.log(\"Hello world\");\\n" +
+                    "</content><line_count>2</line_count></write_to_file>\\n\\n\\t" +
+                    "Let's run the code:\\n\\n\\t" +
+                    "<execute_command><command>node src/index.ts</command></execute_command>";
+
+    parser = new PartialXMLStreamParser({
+      allowedRootNodes: ["read_file", "write_to_file", "execute_command"],
+      textNodeName: "#text",
+      parsePrimitives: false,
+    });
+
+    let streamResult = parser.parseStream(message);
+    expect(streamResult).toEqual({
+      metadata: { partial: false }, // Entire message processed as one chunk
+      xml: [
+        "I'll help you with that task.\\n\\n\\t",
+        {
+          read_file: {
+            path: { "#text": "src/index.ts" },
+          },
+        },
+        "\\n\\n\\tNow let's modify the file:\\n\\n\\t",
+        {
+          write_to_file: {
+            path: { "#text": "src/index.ts" },
+            content: { "#text": "\\n// Updated content\\nconsole.log(\"Hello world\");\\n" },
+            line_count: { "#text": "2" }, // parsePrimitives is false
+          },
+        },
+        "\\n\\n\\tLet's run the code:\\n\\n\\t",
+        {
+          execute_command: {
+            command: { "#text": "node src/index.ts" },
+          },
+        },
+      ],
+    });
+
+    // Test with null to ensure final state is the same and parser considers it complete
+    streamResult = parser.parseStream(null);
+    expect(streamResult).toEqual({
+      metadata: { partial: false },
+      xml: [
+        "I'll help you with that task.\\n\\n\\t",
+        {
+          read_file: {
+            path: { "#text": "src/index.ts" },
+          },
+        },
+        "\\n\\n\\tNow let's modify the file:\\n\\n\\t",
+        {
+          write_to_file: {
+            path: { "#text": "src/index.ts" },
+            content: { "#text": "\\n// Updated content\\nconsole.log(\"Hello world\");\\n" },
+            line_count: { "#text": "2" },
+          },
+        },
+        "\\n\\n\\tLet's run the code:\\n\\n\\t",
+        {
+          execute_command: {
+            command: { "#text": "node src/index.ts" },
+          },
+        },
+      ],
+    });
   });
 });
 describe("Conditional XML Parsing with allowedRootNodes", () => {
