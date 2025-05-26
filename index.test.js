@@ -68,12 +68,12 @@ describe("PartialXMLStreamParser", () => {
 
     streamResult = parser.parseStream("ta></request>");
     expect(streamResult).toEqual({
-      metadata: { partial: true },
+      metadata: { partial: false },
       xml: [
         {
           request: {
             id: { "#text": "123" },
-            data: { "#text": "value", data: {} },
+            data: { "#text": "value<data>" },
           },
         },
       ],
@@ -81,12 +81,12 @@ describe("PartialXMLStreamParser", () => {
 
     streamResult = parser.parseStream(null); // Signal end
     expect(streamResult).toEqual({
-      metadata: { partial: true },
+      metadata: { partial: false },
       xml: [
         {
           request: {
             id: { "#text": "123" },
-            data: { "#text": "value", data: {} },
+            data: { "#text": "value<data>" },
           },
         },
       ],
@@ -329,12 +329,12 @@ describe("PartialXMLStreamParser", () => {
     );
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: [{ root: { item: { "#text": "text" } } }],
+      xml: [{ root: { item: { "#text": "text</mismatched>" } } }],
     });
     streamResult = parser.parseStream(null);
     expect(streamResult).toEqual({
       metadata: { partial: false },
-      xml: [{ root: { item: { "#text": "text" } } }],
+      xml: [{ root: { item: { "#text": "text</mismatched>" } } }],
     });
   });
 

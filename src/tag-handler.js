@@ -118,72 +118,180 @@ function handleSpecialPrefixes(parserContext, buffer, charAfterLT) {
 
 function handleClosingTag(parserContext, tagString) {
   const textNodeName = parserContext.customOptions.textNodeName;
+  
+  // 1. Initial Check & Syntax Validation
   const match = tagString.match(STATIC_CLOSING_TAG_REGEX);
-  if (match) {
-    const tagName = match[1];
-    if (
-      parserContext.tagStack.length > 0 &&
-      parserContext.tagStack[parserContext.tagStack.length - 1].tagName === tagName
-    ) {
-      const closedTagState = parserContext.tagStack.pop();
-      parserContext.currentPointer =
-        parserContext.tagStack.length > 0
-          ? parserContext.tagStack[parserContext.tagStack.length - 1].objPtr
-          : null;
-
-      if (
-        !parserContext.customOptions.alwaysCreateTextNode &&
-        closedTagState.textOnly &&
-        closedTagState.objPtr.hasOwnProperty(textNodeName) &&
-        Object.keys(closedTagState.objPtr).length === 1
-      ) {
-        const textVal = closedTagState.objPtr[textNodeName];
-        if (parserContext.currentPointer) {
-          for (const keyInParent in parserContext.currentPointer) {
-            if (
-              parserContext.currentPointer[keyInParent] === closedTagState.objPtr
-            ) {
-              parserContext.currentPointer[keyInParent] = textVal;
-              break;
-            } else if (
-              Array.isArray(parserContext.currentPointer[keyInParent])
-            ) {
-              const arr = parserContext.currentPointer[keyInParent];
-              const idx = arr.indexOf(closedTagState.objPtr);
+  if (!match) {
+    // Not syntactically valid, return false to allow fallback to handleFallbackText
+    return false;
+  }
+  
+  const closingTagName = match[1];
+  
+  // 2. Check if tagStack is empty
+  if (parserContext.tagStack.length === 0) {
+    // No open parent, return false
+    return false;
+  }
+  
+  // 3. Search the tagStack for a Match
+  let matchIndex = -1;
+  for (let i = parserContext.tagStack.length - 1; i >= 0; i--) {
+    if (parserContext.tagStack[i].tagName === closingTagName) {
+      matchIndex = i;
+      break;
+    }
+  }
+  
+  // 4. If a Match is Found
+  if (matchIndex !== -1) {
+    // Handle Interrupted Tags - only process the topmost instances of each tag name
+    const processedTagNames = new Set();
+    for (let i = parserContext.tagStack.length - 1; i > matchIndex; i--) {
+      const interruptedTagState = parserContext.tagStack[i];
+      const parentOfInterruptedTagState = parserContext.tagStack[i - 1];
+      
+      // Skip if we've already processed a tag with this name (process only the topmost)
+      if (processedTagNames.has(interruptedTagState.tagName)) {
+        continue;
+      }
+      processedTagNames.add(interruptedTagState.tagName);
+      
+      // Construct the text representation of the opening tag
+      const openingTagText = "<" + interruptedTagState.tagName + ">";
+      
+      if (parentOfInterruptedTagState && parentOfInterruptedTagState.objPtr) {
+        // Remove the interrupted tag's object from its parent if it exists
+        const parentObj = parentOfInterruptedTagState.objPtr;
+        const tagName = interruptedTagState.tagName;
+        
+        if (parentObj.hasOwnProperty(tagName)) {
+          // Only remove empty objects or objects that were just created
+          const shouldRemove = !interruptedTagState.objPtr ||
+                              Object.keys(interruptedTagState.objPtr).length === 0 ||
+                              (Object.keys(interruptedTagState.objPtr).length === 1 &&
+                               interruptedTagState.objPtr.hasOwnProperty(tagName) &&
+                               Object.keys(interruptedTagState.objPtr[tagName]).length === 0);
+          
+          if (shouldRemove) {
+            // If it's an array, remove the interrupted tag's object
+            if (Array.isArray(parentObj[tagName])) {
+              const arr = parentObj[tagName];
+              const idx = arr.indexOf(interruptedTagState.objPtr);
               if (idx !== -1) {
-                arr[idx] = textVal;
-                break;
+                arr.splice(idx, 1);
+                // If array becomes empty, remove the property
+                if (arr.length === 0) {
+                  delete parentObj[tagName];
+                }
               }
+            } else if (parentObj[tagName] === interruptedTagState.objPtr) {
+              // If it's a direct reference, remove it
+              delete parentObj[tagName];
             }
           }
-        } else {
-          for (let k = 0; k < parserContext.accumulator.length; k++) {
+        }
+        
+        // Add the opening tag as text content to the parent
+        addValueToObject(
+          parentOfInterruptedTagState.objPtr,
+          textNodeName,
+          openingTagText,
+          parserContext.customOptions
+        );
+        parentOfInterruptedTagState.textOnly = false;
+      }
+    }
+    
+    // Pop Tags: Pop all tags from matchIndex to the top of the stack (inclusive)
+    parserContext.tagStack.length = matchIndex;
+    
+    // Get the matched tag state before popping
+    const matchedTagState = parserContext.tagStack[matchIndex];
+    
+    // Pop Tags: Pop all tags from matchIndex to the top of the stack (inclusive)
+    parserContext.tagStack.length = matchIndex;
+    
+    // Handle text-only optimization for the matched tag (similar to original logic)
+    if (
+      !parserContext.customOptions.alwaysCreateTextNode &&
+      matchedTagState.textOnly &&
+      matchedTagState.objPtr.hasOwnProperty(textNodeName) &&
+      Object.keys(matchedTagState.objPtr).length === 1
+    ) {
+      const textVal = matchedTagState.objPtr[textNodeName];
+      if (parserContext.tagStack.length > 0) {
+        const currentParent = parserContext.tagStack[parserContext.tagStack.length - 1].objPtr;
+        for (const keyInParent in currentParent) {
+          if (currentParent[keyInParent] === matchedTagState.objPtr) {
+            currentParent[keyInParent] = textVal;
+            break;
+          } else if (Array.isArray(currentParent[keyInParent])) {
+            const arr = currentParent[keyInParent];
+            const idx = arr.indexOf(matchedTagState.objPtr);
+            if (idx !== -1) {
+              arr[idx] = textVal;
+              break;
+            }
+          }
+        }
+      } else {
+        for (let k = 0; k < parserContext.accumulator.length; k++) {
+          if (
+            typeof parserContext.accumulator[k] === "object" &&
+            parserContext.accumulator[k] !== null
+          ) {
+            const rootTagNameFromAccumulator = Object.keys(
+              parserContext.accumulator[k],
+            )[0];
             if (
-              typeof parserContext.accumulator[k] === "object" &&
-              parserContext.accumulator[k] !== null
+              rootTagNameFromAccumulator === matchedTagState.tagName &&
+              parserContext.accumulator[k][rootTagNameFromAccumulator] ===
+                matchedTagState.objPtr
             ) {
-              const rootTagNameFromAccumulator = Object.keys(
-                parserContext.accumulator[k],
-              )[0];
-              if (
-                rootTagNameFromAccumulator === closedTagState.tagName &&
-                parserContext.accumulator[k][rootTagNameFromAccumulator] ===
-                  closedTagState.objPtr
-              ) {
-                parserContext.accumulator[k][rootTagNameFromAccumulator] =
-                  textVal;
-                break;
-              }
+              parserContext.accumulator[k][rootTagNameFromAccumulator] =
+                textVal;
+              break;
             }
           }
         }
       }
     }
+    
+    // Update Context
+    parserContext.currentPointer = parserContext.tagStack.length > 0
+      ? parserContext.tagStack[parserContext.tagStack.length - 1].objPtr
+      : null;
     parserContext.parsingIndex += tagString.length;
     parserContext.incompleteStructureState = null;
     parserContext.reparsedSegmentContext = null;
+    
     return true;
   }
+  
+  // 5. If No Match is Found in the Entire Stack
+  // The tagString itself becomes literal text
+  if (parserContext.currentPointer) {
+    addValueToObject(
+      parserContext.currentPointer,
+      textNodeName,
+      tagString,
+      parserContext.customOptions
+    );
+    
+    // Mark the current top-of-stack tag as not textOnly
+    parserContext.tagStack[parserContext.tagStack.length - 1].textOnly = false;
+    
+    // Advance parsing index and clear incomplete states
+    parserContext.parsingIndex += tagString.length;
+    parserContext.incompleteStructureState = null;
+    parserContext.reparsedSegmentContext = null;
+    
+    return true;
+  }
+  
+  // This shouldn't happen since we checked tagStack.length > 0 earlier,
+  // but return false as fallback
   return false;
 }
 
