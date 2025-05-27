@@ -1,7 +1,7 @@
 {
   "name": "partial-xml-stream-parser",
-  "version": "1.6.0",
-  "description": "A lenient XML stream parser that can handle incomplete or malformed XML data, with improved support for conditional root node parsing and mixed content.",
+  "version": "1.7.0",
+  "description": "A lenient XML stream parser that can handle incomplete or malformed XML data, with CDATA support for XML serialization and round-trip parsing.",
   "main": "index.js",
   "types": "index.d.ts",
   "repository": {
@@ -28,7 +28,10 @@
     "ai",
     "language model",
     "conditional",
-    "conditional parsing"
+    "conditional parsing",
+    "cdata",
+    "serialization",
+    "round-trip"
   ],
   "author": "",
   "license": "MIT",

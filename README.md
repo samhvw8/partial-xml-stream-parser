@@ -15,7 +15,9 @@ A lenient, streaming XML parser for Node.js. This parser is designed to handle X
 - **Attribute Handling**: Parses XML attributes with a configurable prefix.
 - **Text Node Handling**: Manages text content within tags. Text content is always placed in a specified text node (e.g., `"#text"`), as `alwaysCreateTextNode` defaults to `true`.
 - **Entity Decoding**: Decodes basic XML entities (`<`, `>`, `&`, `"`, `'`) and numeric entities.
-- **CDATA Support**: Properly handles CDATA sections.
+- **CDATA Support**: Properly handles CDATA sections and automatically wraps XML-like content in CDATA for serialization.
+- **XML Serialization**: Convert parsed XML objects back to XML strings with `xmlObjectToString`.
+- **Round-trip Parsing**: Full support for parsing → serializing → parsing workflows.
 - **Stop Nodes**: Ability to specify tags whose content should not be parsed.
 - **Primitive Type Parsing**: Optional conversion of string values to numbers and booleans.
 - **Enhanced Conditional Root Node Parsing**: Improved handling of XML content when using the `allowedRootNodes` option, with better detection and processing of allowed root elements.
@@ -23,9 +25,17 @@ A lenient, streaming XML parser for Node.js. This parser is designed to handle X
 - **Mixed Content Handling**: Optimized for processing streams that contain both XML elements and plain text, making it ideal for parsing LLM outputs with embedded tool calls.
 - **Robust Partial State Management**: Better handling of incomplete XML structures at stream boundaries.
 
-## What's New in v1.6.0
+## What's New in v1.7.0
 
-This release includes significant improvements to the parser's handling of mixed content and conditional root node parsing:
+This release introduces CDATA support for XML serialization and round-trip parsing:
+
+- **XML Serialization with CDATA Support**: New `xmlObjectToString` function that converts parsed XML objects back to XML strings with automatic CDATA wrapping for content containing XML-like characters.
+- **Round-trip Parsing**: Full support for parsing XML, serializing it back to a string, and parsing it again with consistent results.
+- **Automatic CDATA Detection**: Text content containing `<`, `>`, or `&` characters is automatically wrapped in CDATA sections to prevent parsing conflicts.
+- **Enhanced Module Exports**: The module now exports both `PartialXMLStreamParser` and `xmlObjectToString` for complete XML processing workflows.
+- **Comprehensive Test Coverage**: Added 600+ new tests covering serialization, round-trip parsing, and edge cases.
+
+### Previous Release (v1.6.0)
 
 - **Enhanced Mixed Content Processing**: Better handling of streams that contain both XML elements and plain text, particularly useful for parsing LLM outputs with embedded tool calls.
 - **Improved Conditional Root Node Parsing**: The `allowedRootNodes` feature has been completely reworked to provide more reliable detection and processing of allowed root elements, with better handling of text content before, between, and after XML elements.
@@ -165,7 +175,10 @@ yarn add partial-xml-stream-parser
 ## Usage
 
 ```javascript
-const PartialXMLStreamParser = require("partial-xml-stream-parser");
+const { PartialXMLStreamParser, xmlObjectToString } = require("partial-xml-stream-parser");
+
+// Or if you only need the parser:
+// const { PartialXMLStreamParser } = require("partial-xml-stream-parser");
 
 const parser = new PartialXMLStreamParser({
   textNodeName: "#text", // Default is "#text"
@@ -254,6 +267,69 @@ console.log(JSON.stringify(result, null, 2));
 //   ]
 // }
 ```
+
+## XML Serialization and Round-trip Parsing
+
+The `xmlObjectToString` function allows you to convert parsed XML objects back to XML strings, with automatic CDATA support for content containing XML-like characters:
+
+```javascript
+const { PartialXMLStreamParser, xmlObjectToString } = require("partial-xml-stream-parser");
+
+// Example 1: Basic serialization
+const xmlObject = {
+  document: {
+    "@version": "1.0",
+    header: { title: "Test Document" },
+    body: {
+      section: [
+        { "@id": "s1", p: "Paragraph 1" },
+        { "@id": "s2", p: "Paragraph 2 with <special> chars" }
+      ]
+    }
+  }
+};
+
+const xmlString = xmlObjectToString(xmlObject);
+console.log(xmlString);
+// Output:
+// <document version="1.0"><header><title>Test Document</title></header><body><section id="s1"><p>Paragraph 1</p></section><section id="s2"><p><![CDATA[Paragraph 2 with <special> chars]]></p></section></body></document>
+
+// Example 2: Round-trip parsing
+const parser = new PartialXMLStreamParser({
+  textNodeName: "#text",
+  attributeNamePrefix: "@"
+});
+
+// Parse the serialized XML back
+const parsed = parser.parseStream(xmlString);
+console.log(JSON.stringify(parsed.xml[0], null, 2));
+
+// Serialize again - should be identical to original
+const reserialized = xmlObjectToString(parsed.xml[0]);
+console.log("Round-trip successful:", xmlString === reserialized);
+// Output: Round-trip successful: true
+
+// Example 3: CDATA handling
+const textWithXml = "This contains <tags> and & entities";
+const simpleObject = { message: textWithXml };
+
+const serialized = xmlObjectToString(simpleObject);
+console.log(serialized);
+// Output: <message><![CDATA[This contains <tags> & entities]]></message>
+
+// Parse it back
+const reparsed = parser.parseStream(serialized);
+console.log(reparsed.xml[0].message["#text"]);
+// Output: This contains <tags> & entities
+```
+
+### Key Features of XML Serialization:
+
+- **Automatic CDATA Wrapping**: Text content containing `<`, `>`, or `&` characters is automatically wrapped in CDATA sections
+- **Attribute Handling**: Supports custom attribute prefixes (default: `@`)
+- **Text Node Support**: Handles custom text node names (default: `#text`)
+- **Array Support**: Properly serializes arrays as multiple elements with the same tag name
+- **Round-trip Compatibility**: Ensures that parsed XML can be serialized and parsed again with identical results
 
 ### Advanced Usage Examples
 
