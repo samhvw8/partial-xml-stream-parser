@@ -103,10 +103,130 @@ function parseAttributes(
   return attrs;
 }
 
+/**
+ * Checks if text content needs to be wrapped in CDATA
+ * @param {string} text - The text to check
+ * @returns {boolean} True if CDATA is needed
+ */
+function needsCDATA(text) {
+  if (typeof text !== "string") return false;
+  // Check for XML-like characters that would cause parsing issues
+  return text.includes('<') || text.includes('>') || text.includes('&');
+}
+
+/**
+ * Escapes special XML characters in text content
+ * @param {*} text - The text to escape (if not a string, returns as-is)
+ * @returns {string} The escaped text
+ */
+function escapeXmlText(text) {
+  if (typeof text !== "string") {
+    // Convert numbers and booleans to strings, return others as-is
+    if (typeof text === "number" || typeof text === "boolean") {
+      return String(text);
+    }
+    return text;
+  }
+  
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+/**
+ * Converts a JavaScript object (from XML parser output) back to XML string
+ * @param {*} node - The node to convert (object, array, or primitive)
+ * @param {Object} options - Options object
+ * @returns {string} The XML string representation
+ */
+function xmlObjectToString(node, options = {}) {
+  // Import DEFAULT_STREAM_OPTIONS and merge with provided options
+  const { DEFAULT_STREAM_OPTIONS } = require('./options.js');
+  const mergedOptions = { ...DEFAULT_STREAM_OPTIONS, ...options };
+  const { textNodeName, attributeNamePrefix } = mergedOptions;
+
+  // Base cases
+  if (node === null || node === undefined) {
+    return "";
+  }
+
+  // Handle arrays - recursively process each item
+  if (Array.isArray(node)) {
+    return node.map(item => xmlObjectToString(item, mergedOptions)).join("");
+  }
+
+  // Handle primitives (string, number, boolean)
+  if (typeof node !== "object") {
+    // Convert to string - use CDATA for strings with XML-like content
+    if (typeof node === "string") {
+      return needsCDATA(node) ? `<![CDATA[${node}]]>` : node;
+    }
+    return String(node);
+  }
+
+  // Handle objects
+  let xmlString = "";
+  
+  for (const tagName of Object.keys(node)) {
+    const tagContent = node[tagName];
+    let attributesString = "";
+    let childrenString = "";
+
+    // If tagContent is an array, handle multiple child elements with the same tag name
+    if (Array.isArray(tagContent)) {
+      // Each item in the array becomes child content
+      childrenString = tagContent.map(item => xmlObjectToString(item, mergedOptions)).join("");
+    } else if (typeof tagContent === "object" && tagContent !== null) {
+      // Process the object's properties
+      for (const subKey of Object.keys(tagContent)) {
+        if (subKey === textNodeName) {
+          // This is text content - check this first to avoid treating it as an attribute
+          const textContent = tagContent[subKey];
+          if (typeof textContent === "string" && needsCDATA(textContent)) {
+            childrenString += `<![CDATA[${textContent}]]>`;
+          } else {
+            childrenString += xmlObjectToString(textContent, mergedOptions);
+          }
+        } else if (subKey.startsWith(attributeNamePrefix)) {
+          // This is an attribute
+          const attributeName = subKey.substring(attributeNamePrefix.length);
+          const attrValue = String(tagContent[subKey]);
+          attributesString += ` ${attributeName}="${attrValue}"`;
+        } else {
+          // This is a child element - handle arrays properly
+          if (Array.isArray(tagContent[subKey])) {
+            // Multiple elements with the same name
+            for (const item of tagContent[subKey]) {
+              childrenString += xmlObjectToString({ [subKey]: item }, mergedOptions);
+            }
+          } else {
+            // Single child element
+            childrenString += xmlObjectToString({ [subKey]: tagContent[subKey] }, mergedOptions);
+          }
+        }
+      }
+    } else {
+      // tagContent is a primitive - treat as direct content
+      childrenString = xmlObjectToString(tagContent, mergedOptions);
+    }
+
+    // Build the XML tag
+    xmlString += `<${tagName}${attributesString}>${childrenString}</${tagName}>`;
+  }
+
+  return xmlString;
+}
+
 module.exports = {
   decodeXmlEntities,
   tryParsePrimitive,
   parseAttributes,
+  escapeXmlText,
+  needsCDATA,
+  xmlObjectToString,
   XML_ENTITY_REGEX, // Exporting for potential direct use or testing, though not typical
   BOOLEAN_VALUES,   // Exporting for potential direct use or testing
 };

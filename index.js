@@ -2,6 +2,7 @@
 const { processXmlChunk, finalizeStreamResult } = require("./src/stream-processor.js");
 const { coreProcessBuffer } = require("./src/core-parser.js");
 const { initializeParserOptions, resetParserState } = require("./src/parser-setup.js");
+const { xmlObjectToString } = require("./src/utils.js");
 
 class PartialXMLStreamParser {
   constructor(options) {
@@ -41,4 +42,7 @@ class PartialXMLStreamParser {
   }
 }
 
-module.exports = PartialXMLStreamParser;
+module.exports = {
+  PartialXMLStreamParser,
+  xmlObjectToString,
+};
