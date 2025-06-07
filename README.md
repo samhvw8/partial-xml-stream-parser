@@ -26,9 +26,17 @@ A lenient, streaming XML parser for Node.js. This parser is designed to handle X
 - **Mixed Content Handling**: Optimized for processing streams that contain both XML elements and plain text, making it ideal for parsing LLM outputs with embedded tool calls.
 - **Robust Partial State Management**: Better handling of incomplete XML structures at stream boundaries.
 
-## What's New in v1.8.0
+## What's New in v1.8.1
 
-This release introduces depth control and enhanced XML processing capabilities:
+This patch release fixes a critical bug in the `maxDepth` feature:
+
+- **Fixed maxDepth Logic**: Corrected the depth checking condition from `>=` to `>` to properly implement depth limits. Previously, tags were being treated as text one level earlier than intended.
+- **Updated Test Suite**: Fixed all test expectations to match the corrected behavior.
+- **Improved Documentation**: Clarified the correct behavior of `maxDepth` with accurate examples.
+
+### Previous Release (v1.8.0)
+
+This release introduced depth control and enhanced XML processing capabilities:
 
 - **Max Depth Control**: New `maxDepth` option allows limiting XML parsing depth. Tags beyond the specified depth are treated as stop nodes, with their content preserved as raw text.
 - **Enhanced CDATA Handling**: Improved CDATA detection and processing for better round-trip parsing reliability.
@@ -349,7 +357,7 @@ The `maxDepth` option allows you to limit the nesting depth of XML parsing. Tags
 
 ```javascript
 const parser = new PartialXMLStreamParser({
-  maxDepth: 2, // Only parse up to 2 levels deep
+  maxDepth: 2, // Allow depths 0, 1, and 2 - treat depth 3+ as text
   textNodeName: "#text",
 });
 
@@ -364,10 +372,10 @@ console.log(JSON.stringify(result, null, 2));
 //   },
 //   "xml": [
 //     {
-//       "root": {
-//         "level1": {
-//           "level2": {
-//             "#text": "<level3>deep content</level3>"
+//       "root": {           // depth 0 - parsed
+//         "level1": {       // depth 1 - parsed
+//           "level2": {     // depth 2 - parsed
+//             "#text": "<level3>deep content</level3>"  // depth 3+ - treated as text
 //           }
 //         }
 //       }
@@ -375,6 +383,11 @@ console.log(JSON.stringify(result, null, 2));
 //   ]
 // }
 ```
+
+**Important Note**: The depth counting is 0-based:
+- `maxDepth: 1` allows depths 0 and 1 (root + 1 level)
+- `maxDepth: 2` allows depths 0, 1, and 2 (root + 2 levels)
+- `maxDepth: 3` allows depths 0, 1, 2, and 3 (root + 3 levels)
 
 This feature is particularly useful for:
 - **Preventing excessive nesting**: Limiting parsing depth in deeply nested XML structures

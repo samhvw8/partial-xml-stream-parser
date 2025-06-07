@@ -690,7 +690,10 @@ describe("PartialXMLStreamParser", () => {
             root: {
               a: {
                 b: {
-                  "#text": "<c id=\"test\"><d>deep content</d></c>",
+                  c: {
+                    "#text": "<d>deep content</d>",
+                    "@id": "test",
+                  },
                 },
               },
             },
@@ -711,7 +714,9 @@ describe("PartialXMLStreamParser", () => {
         metadata: { partial: false },
         xml: [
           {
-            root: { "#text": "<child>content</child>" },
+            root: {
+              child: { "#text": "content" },
+            },
           },
         ],
       });
@@ -734,7 +739,7 @@ describe("PartialXMLStreamParser", () => {
     it("should combine maxDepth with existing stopNodes", () => {
       parser = new PartialXMLStreamParser({
         maxDepth: 3,
-        stopNodes: ["script"],
+        stopNodes: ["root.level1.script"],
         textNodeName: "#text",
       });
       let streamResult = parser.parseStream(
@@ -747,7 +752,9 @@ describe("PartialXMLStreamParser", () => {
             root: {
               level1: {
                 script: { "#text": "code" },
-                level2: { "#text": "<level3>content</level3>" },
+                level2: {
+                  level3: { "#text": "content" },
+                },
               },
             },
           },
