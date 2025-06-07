@@ -19,15 +19,24 @@ A lenient, streaming XML parser for Node.js. This parser is designed to handle X
 - **XML Serialization**: Convert parsed XML objects back to XML strings with `xmlObjectToString`.
 - **Round-trip Parsing**: Full support for parsing → serializing → parsing workflows.
 - **Stop Nodes**: Ability to specify tags whose content should not be parsed.
+- **Max Depth Control**: Limit XML parsing depth with the `maxDepth` option - tags beyond the specified depth are treated as stop nodes.
 - **Primitive Type Parsing**: Optional conversion of string values to numbers and booleans.
 - **Enhanced Conditional Root Node Parsing**: Improved handling of XML content when using the `allowedRootNodes` option, with better detection and processing of allowed root elements.
 - **Multiple Root Elements**: Supports XML with multiple root elements, returned as an array.
 - **Mixed Content Handling**: Optimized for processing streams that contain both XML elements and plain text, making it ideal for parsing LLM outputs with embedded tool calls.
 - **Robust Partial State Management**: Better handling of incomplete XML structures at stream boundaries.
 
-## What's New in v1.7.0
+## What's New in v1.8.0
 
-This release introduces CDATA support for XML serialization and round-trip parsing:
+This release introduces depth control and enhanced XML processing capabilities:
+
+- **Max Depth Control**: New `maxDepth` option allows limiting XML parsing depth. Tags beyond the specified depth are treated as stop nodes, with their content preserved as raw text.
+- **Enhanced CDATA Handling**: Improved CDATA detection and processing for better round-trip parsing reliability.
+- **Comprehensive Test Coverage**: Added extensive tests for depth control scenarios and edge cases.
+
+### Previous Release (v1.7.0)
+
+This release introduced CDATA support for XML serialization and round-trip parsing:
 
 - **XML Serialization with CDATA Support**: New `xmlObjectToString` function that converts parsed XML objects back to XML strings with automatic CDATA wrapping for content containing XML-like characters.
 - **Round-trip Parsing**: Full support for parsing XML, serializing it back to a string, and parsing it again with consistent results.
@@ -186,6 +195,7 @@ const parser = new PartialXMLStreamParser({
   alwaysCreateTextNode: true, // Default is true
   // parsePrimitives: false, // Default is false
   // stopNodes: [], // Default is empty
+  // maxDepth: null, // Default is null (no depth limit)
   // allowedRootNodes: [], // Default is empty (parse all XML unconditionally)
 });
 
@@ -332,6 +342,45 @@ console.log(reparsed.xml[0].message["#text"]);
 - **Round-trip Compatibility**: Ensures that parsed XML can be serialized and parsed again with identical results
 
 ### Advanced Usage Examples
+
+#### Max Depth Control
+
+The `maxDepth` option allows you to limit the nesting depth of XML parsing. Tags beyond the specified depth are treated as stop nodes, with their content preserved as raw text:
+
+```javascript
+const parser = new PartialXMLStreamParser({
+  maxDepth: 2, // Only parse up to 2 levels deep
+  textNodeName: "#text",
+});
+
+const result = parser.parseStream(
+  '<root><level1><level2><level3>deep content</level3></level2></level1></root>',
+);
+console.log(JSON.stringify(result, null, 2));
+// Output:
+// {
+//   "metadata": {
+//     "partial": false
+//   },
+//   "xml": [
+//     {
+//       "root": {
+//         "level1": {
+//           "level2": {
+//             "#text": "<level3>deep content</level3>"
+//           }
+//         }
+//       }
+//     }
+//   ]
+// }
+```
+
+This feature is particularly useful for:
+- **Preventing excessive nesting**: Limiting parsing depth in deeply nested XML structures
+- **Performance optimization**: Reducing processing overhead for complex XML documents
+- **Content preservation**: Maintaining raw XML content beyond a certain depth for later processing
+- **Security**: Preventing potential issues with maliciously deep XML structures
 
 #### Stop Nodes
 

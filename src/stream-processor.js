@@ -50,7 +50,22 @@ function processXmlChunk(parserContext, xmlChunk) {
 
   let signalToProcessCoreBuffer = false;
 
-  if (parserContext.allowedRootNodes) {
+  // Handle maxDepth = 0 case: treat everything as plain text
+  if (parserContext.customOptions.maxDepth === 0) {
+    // Append all data as plain text
+    if (dataToProcess.length > 0) {
+      if (parserContext.accumulator.length > 0 && typeof parserContext.accumulator[parserContext.accumulator.length - 1] === 'string') {
+        parserContext.accumulator[parserContext.accumulator.length - 1] += dataToProcess;
+      } else {
+        parserContext.accumulator.push(dataToProcess);
+      }
+    }
+    // Skip all XML processing
+    return {
+      shouldProcessBuffer: false,
+      earlyExitResult: null,
+    };
+  } else if (parserContext.allowedRootNodes) {
     parserContext._rootDeterminationBuffer += dataToProcess;
     dataToProcess = ""; 
 

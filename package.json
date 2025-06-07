@@ -1,7 +1,7 @@
 {
   "name": "partial-xml-stream-parser",
-  "version": "1.7.0",
-  "description": "A lenient XML stream parser that can handle incomplete or malformed XML data, with CDATA support for XML serialization and round-trip parsing.",
+  "version": "1.8.0",
+  "description": "A lenient XML stream parser that can handle incomplete or malformed XML data, with depth control, CDATA support for XML serialization and round-trip parsing.",
   "main": "index.js",
   "types": "index.d.ts",
   "repository": {
@@ -31,7 +31,10 @@
     "conditional parsing",
     "cdata",
     "serialization",
-    "round-trip"
+    "round-trip",
+    "depth control",
+    "max depth",
+    "nesting limit"
   ],
   "author": "",
   "license": "MIT",

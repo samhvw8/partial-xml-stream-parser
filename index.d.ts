@@ -25,6 +25,12 @@ export interface PartialXMLStreamParserOptions {
   stopNodes?: string[] | string;
 
   /**
+   * Maximum nesting depth; tags beyond this depth are treated like stopNodes
+   * @default null
+   */
+  maxDepth?: number | null;
+
+  /**
    * If true, text content is always in a #text node
    * @default true
    */

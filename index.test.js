@@ -615,7 +615,7 @@ describe("PartialXMLStreamParser", () => {
       metadata: { partial: true },
       xml: [{ root: { item: { "#text": "Text" }, "#text": "</incompleteCl" } }], // Fragment as text
     });
-    
+
     parser.reset();
     parser = new PartialXMLStreamParser({ textNodeName: "#text" });
     streamResult = parser.parseStream("<root><item>Text</item><"); // Just '<'
@@ -635,6 +635,175 @@ describe("PartialXMLStreamParser", () => {
       // this might be an empty root or root with partial text.
       // Current behavior treats "<root attr='val" as text if not closed by ">"
       xml: [{ "#text": "<root attr='val" }],
+    });
+  });
+
+  describe("maxDepth feature", () => {
+    it("should treat tags beyond maxDepth as stopNodes", () => {
+      parser = new PartialXMLStreamParser({
+        maxDepth: 2,
+        textNodeName: "#text",
+      });
+      let streamResult = parser.parseStream(
+        "<root><level1><level2><level3>content</level3></level2></level1></root>",
+      );
+      expect(streamResult).toEqual({
+        metadata: { partial: false },
+        xml: [
+          {
+            root: {
+              level1: {
+                level2: { "#text": "<level3>content</level3>" },
+              },
+            },
+          },
+        ],
+      });
+      streamResult = parser.parseStream(null);
+      expect(streamResult).toEqual({
+        metadata: { partial: false },
+        xml: [
+          {
+            root: {
+              level1: {
+                level2: { "#text": "<level3>content</level3>" },
+              },
+            },
+          },
+        ],
+      });
+    });
+
+    it("should handle maxDepth with nested tags and attributes", () => {
+      parser = new PartialXMLStreamParser({
+        maxDepth: 3,
+        textNodeName: "#text",
+        attributeNamePrefix: "@",
+      });
+      let streamResult = parser.parseStream(
+        '<root><a><b><c id="test"><d>deep content</d></c></b></a></root>',
+      );
+      expect(streamResult).toEqual({
+        metadata: { partial: false },
+        xml: [
+          {
+            root: {
+              a: {
+                b: {
+                  "#text": "<c id=\"test\"><d>deep content</d></c>",
+                },
+              },
+            },
+          },
+        ],
+      });
+    });
+
+    it("should work with maxDepth 1 (only root level allowed)", () => {
+      parser = new PartialXMLStreamParser({
+        maxDepth: 1,
+        textNodeName: "#text",
+      });
+      let streamResult = parser.parseStream(
+        "<root><child>content</child></root>",
+      );
+      expect(streamResult).toEqual({
+        metadata: { partial: false },
+        xml: [
+          {
+            root: { "#text": "<child>content</child>" },
+          },
+        ],
+      });
+    });
+
+    it("should work with maxDepth 0 (treat everything as text)", () => {
+      parser = new PartialXMLStreamParser({
+        maxDepth: 0,
+        textNodeName: "#text",
+      });
+      let streamResult = parser.parseStream(
+        "<root><child>content</child></root>",
+      );
+      expect(streamResult).toEqual({
+        metadata: { partial: false },
+        xml: ["<root><child>content</child></root>"],
+      });
+    });
+
+    it("should combine maxDepth with existing stopNodes", () => {
+      parser = new PartialXMLStreamParser({
+        maxDepth: 3,
+        stopNodes: ["script"],
+        textNodeName: "#text",
+      });
+      let streamResult = parser.parseStream(
+        "<root><level1><script>code</script><level2><level3>content</level3></level2></level1></root>",
+      );
+      expect(streamResult).toEqual({
+        metadata: { partial: false },
+        xml: [
+          {
+            root: {
+              level1: {
+                script: { "#text": "code" },
+                level2: { "#text": "<level3>content</level3>" },
+              },
+            },
+          },
+        ],
+      });
+    });
+
+    it("should handle self-closing tags at max depth", () => {
+      parser = new PartialXMLStreamParser({
+        maxDepth: 2,
+        textNodeName: "#text",
+      });
+      let streamResult = parser.parseStream(
+        "<root><level1><selfclosing/><level2>content</level2></level1></root>",
+      );
+      expect(streamResult).toEqual({
+        metadata: { partial: false },
+        xml: [
+          {
+            root: {
+              level1: {
+                selfclosing: {},
+                level2: { "#text": "content" },
+              },
+            },
+          },
+        ],
+      });
+    });
+
+    it("should handle null maxDepth (no depth limit)", () => {
+      parser = new PartialXMLStreamParser({
+        maxDepth: null,
+        textNodeName: "#text",
+      });
+      let streamResult = parser.parseStream(
+        "<root><a><b><c><d><e>deep content</e></d></c></b></a></root>",
+      );
+      expect(streamResult).toEqual({
+        metadata: { partial: false },
+        xml: [
+          {
+            root: {
+              a: {
+                b: {
+                  c: {
+                    d: {
+                      e: { "#text": "deep content" },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        ],
+      });
     });
   });
 
@@ -1515,14 +1684,14 @@ describe("PartialXMLStreamParser", () => {
     // parser is from beforeEach, implies alwaysCreateTextNode: true, textNodeName: "#text"
     // parsePrimitives is false by default.
     const message = "I'll help you with that task.\\n\\n\\t" +
-                    "<read_file><path>src/index.ts</path></read_file>\\n\\n\\t" +
-                    "Now let's modify the file:\\n\\n\\t" +
-                    "<write_to_file><path>src/index.ts</path><content>\\n" +
-                    "// Updated content\\n" +
-                    "console.log(\"Hello world\");\\n" +
-                    "</content><line_count>2</line_count></write_to_file>\\n\\n\\t" +
-                    "Let's run the code:\\n\\n\\t" +
-                    "<execute_command><command>node src/index.ts</command></execute_command>";
+      "<read_file><path>src/index.ts</path></read_file>\\n\\n\\t" +
+      "Now let's modify the file:\\n\\n\\t" +
+      "<write_to_file><path>src/index.ts</path><content>\\n" +
+      "// Updated content\\n" +
+      "console.log(\"Hello world\");\\n" +
+      "</content><line_count>2</line_count></write_to_file>\\n\\n\\t" +
+      "Let's run the code:\\n\\n\\t" +
+      "<execute_command><command>node src/index.ts</command></execute_command>";
 
     let streamResult = parser.parseStream(message);
     expect(streamResult).toEqual({
@@ -1584,14 +1753,14 @@ describe("PartialXMLStreamParser", () => {
     // parser is from beforeEach, implies alwaysCreateTextNode: true, textNodeName: "#text"
     // parsePrimitives is false by default.
     const message = "I'll help you with that task.\\n\\n\\t" +
-                    "<read_file><path>src/index.ts</path></read_file>\\n\\n\\t" +
-                    "Now let's modify the file:\\n\\n\\t" +
-                    "<write_to_file><path>src/index.ts</path><content>\\n" +
-                    "// Updated content\\n" +
-                    "console.log(\"Hello world\");\\n" +
-                    "</content><line_count>2</line_count></write_to_file>\\n\\n\\t" +
-                    "Let's run the code:\\n\\n\\t" +
-                    "<execute_command><command>node src/index.ts</command></execute_command>";
+      "<read_file><path>src/index.ts</path></read_file>\\n\\n\\t" +
+      "Now let's modify the file:\\n\\n\\t" +
+      "<write_to_file><path>src/index.ts</path><content>\\n" +
+      "// Updated content\\n" +
+      "console.log(\"Hello world\");\\n" +
+      "</content><line_count>2</line_count></write_to_file>\\n\\n\\t" +
+      "Let's run the code:\\n\\n\\t" +
+      "<execute_command><command>node src/index.ts</command></execute_command>";
 
     parser = new PartialXMLStreamParser({
       allowedRootNodes: ["read_file", "write_to_file", "execute_command"],
@@ -2004,442 +2173,442 @@ describe("xmlObjectToString", () => {
           }
         }
       };
-      
+
       const expected = '<root version="1.0">' +
         '<header><title>Test Document</title><meta charset="utf-8"></meta></header>' +
         '<body>' +
-          '<section id="intro"><h1>Introduction</h1><p>This is a test & example.</p></section>' +
-          '<section id="content"><h1>Content</h1><div class="content">Some content here</div></section>' +
+        '<section id="intro"><h1>Introduction</h1><p>This is a test & example.</p></section>' +
+        '<section id="content"><h1>Content</h1><div class="content">Some content here</div></section>' +
         '</body>' +
         '</root>';
-      
+
       expect(xmlObjectToString(input)).toBe(expected);
     });
-describe("Round-trip Testing", () => {
-    it("should maintain data integrity through parse -> serialize -> parse cycle", () => {
-      const originalXml = '<root attr="value"><child>text & more</child><empty/></root>';
-      const parser = new PartialXMLStreamParser({ 
-        textNodeName: "#text", 
-        attributeNamePrefix: "@" 
+    describe("Round-trip Testing", () => {
+      it("should maintain data integrity through parse -> serialize -> parse cycle", () => {
+        const originalXml = '<root attr="value"><child>text & more</child><empty/></root>';
+        const parser = new PartialXMLStreamParser({
+          textNodeName: "#text",
+          attributeNamePrefix: "@"
+        });
+        const parsed = parser.parseStream(originalXml);
+        const serialized = xmlObjectToString(parsed.xml[0]);
+        const reparsed = parser.parseStream(serialized);
+
+        expect(reparsed.xml).toEqual(parsed.xml);
       });
-      const parsed = parser.parseStream(originalXml);
-      const serialized = xmlObjectToString(parsed.xml[0]);
-      const reparsed = parser.parseStream(serialized);
-      
-      expect(reparsed.xml).toEqual(parsed.xml);
-    });
 
-    it("should handle round-trip with complex nested structures", () => {
-      const complexObj = {
-        document: {
-          "@version": "1.0",
-          header: { title: "Test & Demo" },
-          body: {
-            section: [
-              { "@id": "s1", p: "Paragraph 1" },
-              { "@id": "s2", p: "Paragraph 2 with <special> chars" }
-            ]
-          }
-        }
-      };
-      
-      const serialized = xmlObjectToString(complexObj);
-      const parser = new PartialXMLStreamParser({ 
-        textNodeName: "#text", 
-        attributeNamePrefix: "@" 
-      });
-      const parsed = parser.parseStream(serialized);
-      const reserialized = xmlObjectToString(parsed.xml[0]);
-      
-      expect(reserialized).toBe(serialized);
-    });
-  });
-
-  describe("XML Entities Handling", () => {
-    it("should properly escape and handle all XML entities", () => {
-      const input = {
-        test: {
-          "@attr": "value with & < > \" ' entities",
-          "#text": "Text with & < > \" ' entities"
-        }
-      };
-      const result = xmlObjectToString(input);
-      expect(result).toContain('attr="value with & < > " \' entities"');
-      expect(result).toContain("Text with & < > \" ' entities");
-    });
-
-    it("should handle numeric entities in round-trip", () => {
-      const xmlWithNumericEntities = '<test>&#60;Hello&#x26;World&#62;</test>';
-      const parser = new PartialXMLStreamParser({ textNodeName: "#text" });
-      const parsed = parser.parseStream(xmlWithNumericEntities);
-      const serialized = xmlObjectToString(parsed.xml[0]);
-      
-      expect(serialized).toBe('<test><Hello&World></test>');
-    });
-  });
-
-  describe("Self-closing Tags Simulation", () => {
-    it("should handle empty objects as self-closing equivalent", () => {
-      const input = {
-        root: {
-          empty1: {},
-          empty2: {},
-          withContent: "text"
-        }
-      };
-      const result = xmlObjectToString(input);
-      expect(result).toBe('<root><empty1></empty1><empty2></empty2><withContent>text</withContent></root>');
-    });
-
-    it("should handle mixed empty and content elements", () => {
-      const input = {
-        form: {
-          input: [
-            { "@type": "text", "@name": "username" },
-            { "@type": "password", "@name": "password" },
-            { "@type": "submit", "@value": "Login", "#text": "Submit" }
-          ]
-        }
-      };
-      const result = xmlObjectToString(input);
-      expect(result).toContain('<input type="text" name="username"></input>');
-      expect(result).toContain('<input type="password" name="password"></input>');
-      expect(result).toContain('<input type="submit" value="Login">Submit</input>');
-    });
-  });
-
-  describe("Complex Mixed Content", () => {
-    it("should handle arrays of mixed text and elements", () => {
-      const input = {
-        paragraph: {
-          "#text": [
-            "Start text ",
-            { strong: "bold text" },
-            " middle text ",
-            { em: "italic text" },
-            " end text"
-          ]
-        }
-      };
-      const result = xmlObjectToString(input);
-      expect(result).toBe('<paragraph>Start text <strong>bold text</strong> middle text <em>italic text</em> end text</paragraph>');
-    });
-
-    it("should handle deeply nested mixed content", () => {
-      const input = {
-        article: {
-          "@id": "main",
-          h1: "Title",
-          "#text": "Introduction text",
-          section: {
-            h2: "Subtitle",
-            p: [
-              "First paragraph with ",
-              { a: { "@href": "link", "#text": "a link" } },
-              " and more text."
-            ]
-          }
-        }
-      };
-      const result = xmlObjectToString(input);
-      expect(result).toContain('<article id="main">');
-      expect(result).toContain('<h1>Title</h1>');
-      expect(result).toContain('Introduction text');
-      expect(result).toContain('<a href="link">a link</a>');
-    });
-  });
-
-  describe("Stop Nodes Simulation", () => {
-    it("should handle script-like content preservation", () => {
-      const input = {
-        html: {
-          head: { title: "Test" },
-          body: {
-            script: {
-              "@type": "text/javascript",
-              "#text": "function test() { return '<div>not parsed</div>'; }"
+      it("should handle round-trip with complex nested structures", () => {
+        const complexObj = {
+          document: {
+            "@version": "1.0",
+            header: { title: "Test & Demo" },
+            body: {
+              section: [
+                { "@id": "s1", p: "Paragraph 1" },
+                { "@id": "s2", p: "Paragraph 2 with <special> chars" }
+              ]
             }
           }
-        }
-      };
-      const result = xmlObjectToString(input);
-      expect(result).toContain('<script type="text/javascript">function test() { return \'<div>not parsed</div>\'; }</script>');
+        };
+
+        const serialized = xmlObjectToString(complexObj);
+        const parser = new PartialXMLStreamParser({
+          textNodeName: "#text",
+          attributeNamePrefix: "@"
+        });
+        const parsed = parser.parseStream(serialized);
+        const reserialized = xmlObjectToString(parsed.xml[0]);
+
+        expect(reserialized).toBe(serialized);
+      });
     });
 
-    it("should preserve raw content with XML-like strings", () => {
-      const input = {
-        data: {
-          raw: {
-            "#text": "<item>not parsed</item><value>preserved</value>"
+    describe("XML Entities Handling", () => {
+      it("should properly escape and handle all XML entities", () => {
+        const input = {
+          test: {
+            "@attr": "value with & < > \" ' entities",
+            "#text": "Text with & < > \" ' entities"
           }
-        }
-      };
-      const result = xmlObjectToString(input);
-      expect(result).toBe('<data><raw><item>not parsed</item><value>preserved</value></raw></data>');
-    });
-  });
+        };
+        const result = xmlObjectToString(input);
+        expect(result).toContain('attr="value with & < > " \' entities"');
+        expect(result).toContain("Text with & < > \" ' entities");
+      });
 
-  describe("Multiple Root Elements", () => {
-    it("should handle array of root elements", () => {
-      const input = [
-        { thinking: "Planning the approach" },
-        { tool_use: { name: "read_file", args: { path: "test.js" } } },
-        { result: "File content here" }
-      ];
-      const result = xmlObjectToString(input);
-      expect(result).toBe('<thinking>Planning the approach</thinking><tool_use><name>read_file</name><args><path>test.js</path></args></tool_use><result>File content here</result>');
+      it("should handle numeric entities in round-trip", () => {
+        const xmlWithNumericEntities = '<test>&#60;Hello&#x26;World&#62;</test>';
+        const parser = new PartialXMLStreamParser({ textNodeName: "#text" });
+        const parsed = parser.parseStream(xmlWithNumericEntities);
+        const serialized = xmlObjectToString(parsed.xml[0]);
+
+        expect(serialized).toBe('<test><Hello&World></test>');
+      });
     });
 
-    it("should handle mixed root content types", () => {
-      const input = [
-        "Text before",
-        { element: "content" },
-        "Text after",
-        { another: { "@attr": "value" } }
-      ];
-      const result = xmlObjectToString(input);
-      expect(result).toBe('Text before<element>content</element>Text after<another attr="value"></another>');
-    });
-  });
+    describe("Self-closing Tags Simulation", () => {
+      it("should handle empty objects as self-closing equivalent", () => {
+        const input = {
+          root: {
+            empty1: {},
+            empty2: {},
+            withContent: "text"
+          }
+        };
+        const result = xmlObjectToString(input);
+        expect(result).toBe('<root><empty1></empty1><empty2></empty2><withContent>text</withContent></root>');
+      });
 
-  describe("Streaming/Chunked Equivalent", () => {
-    it("should produce same result as streaming parser would expect", () => {
-      const streamingEquivalent = {
-        read: {
-          args: {
-            file: {
-              path: { "#text": "test.js" },
-              line_range: { "#text": "1-100" }
+      it("should handle mixed empty and content elements", () => {
+        const input = {
+          form: {
+            input: [
+              { "@type": "text", "@name": "username" },
+              { "@type": "password", "@name": "password" },
+              { "@type": "submit", "@value": "Login", "#text": "Submit" }
+            ]
+          }
+        };
+        const result = xmlObjectToString(input);
+        expect(result).toContain('<input type="text" name="username"></input>');
+        expect(result).toContain('<input type="password" name="password"></input>');
+        expect(result).toContain('<input type="submit" value="Login">Submit</input>');
+      });
+    });
+
+    describe("Complex Mixed Content", () => {
+      it("should handle arrays of mixed text and elements", () => {
+        const input = {
+          paragraph: {
+            "#text": [
+              "Start text ",
+              { strong: "bold text" },
+              " middle text ",
+              { em: "italic text" },
+              " end text"
+            ]
+          }
+        };
+        const result = xmlObjectToString(input);
+        expect(result).toBe('<paragraph>Start text <strong>bold text</strong> middle text <em>italic text</em> end text</paragraph>');
+      });
+
+      it("should handle deeply nested mixed content", () => {
+        const input = {
+          article: {
+            "@id": "main",
+            h1: "Title",
+            "#text": "Introduction text",
+            section: {
+              h2: "Subtitle",
+              p: [
+                "First paragraph with ",
+                { a: { "@href": "link", "#text": "a link" } },
+                " and more text."
+              ]
             }
           }
-        }
-      };
-      
-      const result = xmlObjectToString(streamingEquivalent);
-      const parser = new PartialXMLStreamParser({ textNodeName: "#text" });
-      const parsed = parser.parseStream(result);
-      
-      expect(parsed.xml[0]).toEqual(streamingEquivalent);
-      expect(parsed.metadata.partial).toBe(false);
+        };
+        const result = xmlObjectToString(input);
+        expect(result).toContain('<article id="main">');
+        expect(result).toContain('<h1>Title</h1>');
+        expect(result).toContain('Introduction text');
+        expect(result).toContain('<a href="link">a link</a>');
+      });
     });
 
-    it("should handle partial-like structures", () => {
-      const partialStructure = {
-        request: {
-          id: { "#text": "123" },
-          data: { "#text": "incomplete" }
-        }
-      };
-      
-      const result = xmlObjectToString(partialStructure);
-      expect(result).toBe('<request><id>123</id><data>incomplete</data></request>');
-    });
-  });
-
-  describe("Edge Cases and Special Characters", () => {
-    it("should handle Unicode characters", () => {
-      const input = {
-        unicode: {
-          "@title": "测试 🚀 émojis",
-          "#text": "Content with 中文 and émojis 🎉"
-        }
-      };
-      const result = xmlObjectToString(input);
-      expect(result).toBe('<unicode title="测试 🚀 émojis">Content with 中文 and émojis 🎉</unicode>');
-    });
-
-    it("should handle very long text content", () => {
-      const longText = "a".repeat(10000);
-      const input = { longContent: longText };
-      const result = xmlObjectToString(input);
-      expect(result).toBe(`<longContent>${longText}</longContent>`);
-      expect(result.length).toBe(longText.length + 27); // tag overhead
-    });
-
-    it("should handle special XML-reserved tag names", () => {
-      const input = {
-        "xml-reserved": "content",
-        "with-dashes": "more content",
-        "with_underscores": "even more"
-      };
-      const result = xmlObjectToString(input);
-      expect(result).toContain('<xml-reserved>content</xml-reserved>');
-      expect(result).toContain('<with-dashes>more content</with-dashes>');
-      expect(result).toContain('<with_underscores>even more</with_underscores>');
-    });
-  });
-
-  describe("Custom Options Comprehensive", () => {
-    it("should work with all custom options combinations", () => {
-      const input = {
-        root: {
-          "_attr1": "value1",
-          "_attr2": "value2",
-          "textContent": "main text",
-          child: {
-            "_childAttr": "childValue",
-            "textContent": "child text"
+    describe("Stop Nodes Simulation", () => {
+      it("should handle script-like content preservation", () => {
+        const input = {
+          html: {
+            head: { title: "Test" },
+            body: {
+              script: {
+                "@type": "text/javascript",
+                "#text": "function test() { return '<div>not parsed</div>'; }"
+              }
+            }
           }
+        };
+        const result = xmlObjectToString(input);
+        expect(result).toContain('<script type="text/javascript">function test() { return \'<div>not parsed</div>\'; }</script>');
+      });
+
+      it("should preserve raw content with XML-like strings", () => {
+        const input = {
+          data: {
+            raw: {
+              "#text": "<item>not parsed</item><value>preserved</value>"
+            }
+          }
+        };
+        const result = xmlObjectToString(input);
+        expect(result).toBe('<data><raw><item>not parsed</item><value>preserved</value></raw></data>');
+      });
+    });
+
+    describe("Multiple Root Elements", () => {
+      it("should handle array of root elements", () => {
+        const input = [
+          { thinking: "Planning the approach" },
+          { tool_use: { name: "read_file", args: { path: "test.js" } } },
+          { result: "File content here" }
+        ];
+        const result = xmlObjectToString(input);
+        expect(result).toBe('<thinking>Planning the approach</thinking><tool_use><name>read_file</name><args><path>test.js</path></args></tool_use><result>File content here</result>');
+      });
+
+      it("should handle mixed root content types", () => {
+        const input = [
+          "Text before",
+          { element: "content" },
+          "Text after",
+          { another: { "@attr": "value" } }
+        ];
+        const result = xmlObjectToString(input);
+        expect(result).toBe('Text before<element>content</element>Text after<another attr="value"></another>');
+      });
+    });
+
+    describe("Streaming/Chunked Equivalent", () => {
+      it("should produce same result as streaming parser would expect", () => {
+        const streamingEquivalent = {
+          read: {
+            args: {
+              file: {
+                path: { "#text": "test.js" },
+                line_range: { "#text": "1-100" }
+              }
+            }
+          }
+        };
+
+        const result = xmlObjectToString(streamingEquivalent);
+        const parser = new PartialXMLStreamParser({ textNodeName: "#text" });
+        const parsed = parser.parseStream(result);
+
+        expect(parsed.xml[0]).toEqual(streamingEquivalent);
+        expect(parsed.metadata.partial).toBe(false);
+      });
+
+      it("should handle partial-like structures", () => {
+        const partialStructure = {
+          request: {
+            id: { "#text": "123" },
+            data: { "#text": "incomplete" }
+          }
+        };
+
+        const result = xmlObjectToString(partialStructure);
+        expect(result).toBe('<request><id>123</id><data>incomplete</data></request>');
+      });
+    });
+
+    describe("Edge Cases and Special Characters", () => {
+      it("should handle Unicode characters", () => {
+        const input = {
+          unicode: {
+            "@title": "测试 🚀 émojis",
+            "#text": "Content with 中文 and émojis 🎉"
+          }
+        };
+        const result = xmlObjectToString(input);
+        expect(result).toBe('<unicode title="测试 🚀 émojis">Content with 中文 and émojis 🎉</unicode>');
+      });
+
+      it("should handle very long text content", () => {
+        const longText = "a".repeat(10000);
+        const input = { longContent: longText };
+        const result = xmlObjectToString(input);
+        expect(result).toBe(`<longContent>${longText}</longContent>`);
+        expect(result.length).toBe(longText.length + 27); // tag overhead
+      });
+
+      it("should handle special XML-reserved tag names", () => {
+        const input = {
+          "xml-reserved": "content",
+          "with-dashes": "more content",
+          "with_underscores": "even more"
+        };
+        const result = xmlObjectToString(input);
+        expect(result).toContain('<xml-reserved>content</xml-reserved>');
+        expect(result).toContain('<with-dashes>more content</with-dashes>');
+        expect(result).toContain('<with_underscores>even more</with_underscores>');
+      });
+    });
+
+    describe("Custom Options Comprehensive", () => {
+      it("should work with all custom options combinations", () => {
+        const input = {
+          root: {
+            "_attr1": "value1",
+            "_attr2": "value2",
+            "textContent": "main text",
+            child: {
+              "_childAttr": "childValue",
+              "textContent": "child text"
+            }
+          }
+        };
+
+        const options = {
+          attributeNamePrefix: "_",
+          textNodeName: "textContent"
+        };
+
+        const result = xmlObjectToString(input, options);
+        expect(result).toBe('<root attr1="value1" attr2="value2">main text<child childAttr="childValue">child text</child></root>');
+      });
+
+      it("should handle empty prefix options", () => {
+        const input = {
+          tag: {
+            "attr": "value",
+            "text": "content"
+          }
+        };
+
+        const options = {
+          attributeNamePrefix: "",
+          textNodeName: "text"
+        };
+
+        const result = xmlObjectToString(input, options);
+        expect(result).toBe('<tag attr="value">content</tag>');
+      });
+    });
+
+    describe("Performance/Stress Testing", () => {
+      it("should handle deeply nested structures efficiently", () => {
+        let deepStructure = { level0: {} };
+        let current = deepStructure.level0;
+
+        for (let i = 1; i < 100; i++) {
+          current[`level${i}`] = {};
+          current = current[`level${i}`];
         }
-      };
-      
-      const options = {
-        attributeNamePrefix: "_",
-        textNodeName: "textContent"
-      };
-      
-      const result = xmlObjectToString(input, options);
-      expect(result).toBe('<root attr1="value1" attr2="value2">main text<child childAttr="childValue">child text</child></root>');
+        current["#text"] = "deep content";
+
+        const start = Date.now();
+        const result = xmlObjectToString(deepStructure);
+        const duration = Date.now() - start;
+
+        expect(result).toContain('<level0><level1>');
+        expect(result).toContain('deep content');
+        expect(duration).toBeLessThan(1000); // Should complete within 1 second
+      });
+
+      it("should handle large arrays efficiently", () => {
+        const largeArray = Array.from({ length: 1000 }, (_, i) => ({
+          item: {
+            "@id": i.toString(),
+            "#text": `Item ${i}`
+          }
+        }));
+
+        const input = { container: { item: largeArray.map(item => item.item) } };
+
+        const start = Date.now();
+        const result = xmlObjectToString(input);
+        const duration = Date.now() - start;
+
+        expect(result).toContain('<item id="0">Item 0</item>');
+        expect(result).toContain('<item id="999">Item 999</item>');
+        expect(duration).toBeLessThan(2000); // Should complete within 2 seconds
+      });
     });
 
-    it("should handle empty prefix options", () => {
-      const input = {
-        tag: {
-          "attr": "value",
-          "text": "content"
-        }
-      };
-      
-      const options = {
-        attributeNamePrefix: "",
-        textNodeName: "text"
-      };
-      
-      const result = xmlObjectToString(input, options);
-      expect(result).toBe('<tag attr="value">content</tag>');
-    });
-  });
+    describe("Whitespace and Formatting", () => {
+      it("should preserve significant whitespace in text content", () => {
+        const input = {
+          pre: {
+            "#text": "  line 1\n  line 2\n    indented\n"
+          }
+        };
+        const result = xmlObjectToString(input);
+        expect(result).toBe('<pre>  line 1\n  line 2\n    indented\n</pre>');
+      });
 
-  describe("Performance/Stress Testing", () => {
-    it("should handle deeply nested structures efficiently", () => {
-      let deepStructure = { level0: {} };
-      let current = deepStructure.level0;
-      
-      for (let i = 1; i < 100; i++) {
-        current[`level${i}`] = {};
-        current = current[`level${i}`];
-      }
-      current["#text"] = "deep content";
-      
-      const start = Date.now();
-      const result = xmlObjectToString(deepStructure);
-      const duration = Date.now() - start;
-      
-      expect(result).toContain('<level0><level1>');
-      expect(result).toContain('deep content');
-      expect(duration).toBeLessThan(1000); // Should complete within 1 second
+      it("should handle mixed whitespace scenarios", () => {
+        const input = {
+          mixed: {
+            "#text": [
+              "  start  ",
+              { span: "  middle  " },
+              "  end  "
+            ]
+          }
+        };
+        const result = xmlObjectToString(input);
+        expect(result).toBe('<mixed>  start  <span>  middle  </span>  end  </mixed>');
+      });
     });
 
-    it("should handle large arrays efficiently", () => {
-      const largeArray = Array.from({ length: 1000 }, (_, i) => ({
-        item: {
-          "@id": i.toString(),
-          "#text": `Item ${i}`
-        }
-      }));
-      
-      const input = { container: { item: largeArray.map(item => item.item) } };
-      
-      const start = Date.now();
-      const result = xmlObjectToString(input);
-      const duration = Date.now() - start;
-      
-      expect(result).toContain('<item id="0">Item 0</item>');
-      expect(result).toContain('<item id="999">Item 999</item>');
-      expect(duration).toBeLessThan(2000); // Should complete within 2 seconds
-    });
-  });
+    describe("Array Handling Edge Cases", () => {
+      it("should handle nested arrays correctly", () => {
+        const input = {
+          matrix: {
+            row: [
+              { cell: ["A1", "A2", "A3"] },
+              { cell: ["B1", "B2", "B3"] }
+            ]
+          }
+        };
+        const result = xmlObjectToString(input);
+        expect(result).toBe('<matrix><row><cell>A1</cell><cell>A2</cell><cell>A3</cell></row><row><cell>B1</cell><cell>B2</cell><cell>B3</cell></row></matrix>');
+      });
 
-  describe("Whitespace and Formatting", () => {
-    it("should preserve significant whitespace in text content", () => {
-      const input = {
-        pre: {
-          "#text": "  line 1\n  line 2\n    indented\n"
-        }
-      };
-      const result = xmlObjectToString(input);
-      expect(result).toBe('<pre>  line 1\n  line 2\n    indented\n</pre>');
+      it("should handle arrays with mixed content types", () => {
+        const input = [
+          { mixed: "string" },
+          { mixed: 42 },
+          { mixed: true },
+          { mixed: { element: "content" } },
+          { mixed: null },
+          { mixed: undefined }
+        ];
+        const result = xmlObjectToString(input);
+        expect(result).toBe('<mixed>string</mixed><mixed>42</mixed><mixed>true</mixed><mixed><element>content</element></mixed><mixed></mixed><mixed></mixed>');
+      });
     });
 
-    it("should handle mixed whitespace scenarios", () => {
-      const input = {
-        mixed: {
-          "#text": [
-            "  start  ",
-            { span: "  middle  " },
-            "  end  "
-          ]
-        }
-      };
-      const result = xmlObjectToString(input);
-      expect(result).toBe('<mixed>  start  <span>  middle  </span>  end  </mixed>');
-    });
-  });
+    describe("Type Coercion and Edge Cases", () => {
+      it("should handle various primitive types", () => {
+        const input = {
+          types: {
+            string: "text",
+            number: 42,
+            boolean: true,
+            zero: 0,
+            emptyString: "",
+            nullValue: null,
+            undefinedValue: undefined
+          }
+        };
+        const result = xmlObjectToString(input);
+        expect(result).toContain('<string>text</string>');
+        expect(result).toContain('<number>42</number>');
+        expect(result).toContain('<boolean>true</boolean>');
+        expect(result).toContain('<zero>0</zero>');
+        expect(result).toContain('<emptyString></emptyString>');
+        expect(result).toContain('<nullValue></nullValue>');
+        expect(result).toContain('<undefinedValue></undefinedValue>');
+      });
 
-  describe("Array Handling Edge Cases", () => {
-    it("should handle nested arrays correctly", () => {
-      const input = {
-        matrix: {
-          row: [
-            { cell: ["A1", "A2", "A3"] },
-            { cell: ["B1", "B2", "B3"] }
-          ]
-        }
-      };
-      const result = xmlObjectToString(input);
-      expect(result).toBe('<matrix><row><cell>A1</cell><cell>A2</cell><cell>A3</cell></row><row><cell>B1</cell><cell>B2</cell><cell>B3</cell></row></matrix>');
+      it("should handle function and object edge cases", () => {
+        const input = {
+          edge: {
+            date: new Date('2023-01-01').toISOString(),
+            regex: /test/.toString(),
+            array: [1, 2, 3]
+          }
+        };
+        const result = xmlObjectToString(input);
+        expect(result).toContain('<date>2023-01-01T00:00:00.000Z</date>');
+        expect(result).toContain('<regex>/test/</regex>');
+        expect(result).toContain('<array>1</array><array>2</array><array>3</array>');
+      });
     });
-
-    it("should handle arrays with mixed content types", () => {
-      const input = [
-        { mixed: "string" },
-        { mixed: 42 },
-        { mixed: true },
-        { mixed: { element: "content" } },
-        { mixed: null },
-        { mixed: undefined }
-      ];
-      const result = xmlObjectToString(input);
-      expect(result).toBe('<mixed>string</mixed><mixed>42</mixed><mixed>true</mixed><mixed><element>content</element></mixed><mixed></mixed><mixed></mixed>');
-    });
-  });
-
-  describe("Type Coercion and Edge Cases", () => {
-    it("should handle various primitive types", () => {
-      const input = {
-        types: {
-          string: "text",
-          number: 42,
-          boolean: true,
-          zero: 0,
-          emptyString: "",
-          nullValue: null,
-          undefinedValue: undefined
-        }
-      };
-      const result = xmlObjectToString(input);
-      expect(result).toContain('<string>text</string>');
-      expect(result).toContain('<number>42</number>');
-      expect(result).toContain('<boolean>true</boolean>');
-      expect(result).toContain('<zero>0</zero>');
-      expect(result).toContain('<emptyString></emptyString>');
-      expect(result).toContain('<nullValue></nullValue>');
-      expect(result).toContain('<undefinedValue></undefinedValue>');
-    });
-
-    it("should handle function and object edge cases", () => {
-      const input = {
-        edge: {
-          date: new Date('2023-01-01').toISOString(),
-          regex: /test/.toString(),
-          array: [1, 2, 3]
-        }
-      };
-      const result = xmlObjectToString(input);
-      expect(result).toContain('<date>2023-01-01T00:00:00.000Z</date>');
-      expect(result).toContain('<regex>/test/</regex>');
-      expect(result).toContain('<array>1</array><array>2</array><array>3</array>');
-    });
-  });
   });
 });

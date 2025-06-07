@@ -110,8 +110,46 @@ function parseAttributes(
  */
 function needsCDATA(text) {
   if (typeof text !== "string") return false;
-  // Check for XML-like characters that would cause parsing issues
-  return text.includes('<') || text.includes('>') || text.includes('&');
+  
+  // Use CDATA only for very specific cases where round-trip parsing would fail
+  // Be conservative - only use CDATA when absolutely necessary
+  
+  // Check for simple XML tag patterns that would be parsed as actual XML
+  const simpleXmlTagPattern = /<[a-zA-Z][a-zA-Z0-9]*>/;
+  
+  if (simpleXmlTagPattern.test(text)) {
+    // Exclude cases that should be treated as literal content:
+    
+    // 1. Content that looks like JavaScript/code with quoted XML
+    if (text.includes("'") || text.includes('"')) {
+      return false;
+    }
+    
+    // 2. Content with multiple complete XML-like structures (treat as literal)
+    const completeTagPattern = /<[a-zA-Z][a-zA-Z0-9]*>[^<]*<\/[a-zA-Z][a-zA-Z0-9]*>/g;
+    const matches = text.match(completeTagPattern);
+    if (matches && matches.length > 1) {
+      return false;
+    }
+    
+    // 3. Simple trailing tag pattern like "value<data>" - treat as literal
+    const trailingTagPattern = /^[^<]*<[a-zA-Z]+>$/;
+    if (trailingTagPattern.test(text)) {
+      return false;
+    }
+    
+    // 4. Simple leading tag pattern like "<Hello&World>" with non-tag content
+    const leadingNonTagPattern = /^<[a-zA-Z]+[^>]*[^a-zA-Z>][^>]*>$/;
+    if (leadingNonTagPattern.test(text)) {
+      return false;
+    }
+    
+    // Only use CDATA for simple cases like "text with <tag> in middle"
+    // that would cause round-trip parsing issues
+    return true;
+  }
+  
+  return false;
 }
 
 /**
@@ -185,11 +223,7 @@ function xmlObjectToString(node, options = {}) {
         if (subKey === textNodeName) {
           // This is text content - check this first to avoid treating it as an attribute
           const textContent = tagContent[subKey];
-          if (typeof textContent === "string" && needsCDATA(textContent)) {
-            childrenString += `<![CDATA[${textContent}]]>`;
-          } else {
-            childrenString += xmlObjectToString(textContent, mergedOptions);
-          }
+          childrenString += xmlObjectToString(textContent, mergedOptions);
         } else if (subKey.startsWith(attributeNamePrefix)) {
           // This is an attribute
           const attributeName = subKey.substring(attributeNamePrefix.length);
