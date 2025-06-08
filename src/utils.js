@@ -175,6 +175,31 @@ function escapeXmlText(text) {
 }
 
 /**
+ * Processes CDATA content in stopnode raw content by extracting the actual content
+ * and removing CDATA markers
+ * @param {string} rawContent - The raw content from a stopnode
+ * @returns {string} The processed content with CDATA sections extracted
+ */
+function processCDATAInStopnode(rawContent) {
+  if (typeof rawContent !== "string") return rawContent;
+  
+  // Replace complete CDATA sections with their content
+  let processed = rawContent.replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1');
+  
+  // Handle incomplete CDATA at the beginning (streaming case)
+  if (processed.startsWith('<![CDATA[')) {
+    processed = processed.substring(9); // Remove '<![CDATA['
+  }
+  
+  // Handle incomplete CDATA at the end (streaming case)
+  if (processed.endsWith(']]>')) {
+    processed = processed.substring(0, processed.length - 3); // Remove ']]>'
+  }
+  
+  return processed;
+}
+
+/**
  * Converts a JavaScript object (from XML parser output) back to XML string
  * @param {*} node - The node to convert (object, array, or primitive)
  * @param {Object} options - Options object
@@ -261,6 +286,7 @@ module.exports = {
   escapeXmlText,
   needsCDATA,
   xmlObjectToString,
+  processCDATAInStopnode,
   XML_ENTITY_REGEX, // Exporting for potential direct use or testing, though not typical
   BOOLEAN_VALUES,   // Exporting for potential direct use or testing
 };

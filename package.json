@@ -1,7 +1,7 @@
 {
   "name": "partial-xml-stream-parser",
-  "version": "1.9.0",
-  "description": "A lenient XML stream parser that can handle incomplete or malformed XML data, with depth control, CDATA support for XML serialization and round-trip parsing, and wildcard pattern support for stopNodes.",
+  "version": "1.9.1",
+  "description": "A lenient XML stream parser that can handle incomplete or malformed XML data, with depth control, CDATA support for XML serialization and round-trip parsing, wildcard pattern support for stopNodes, and CDATA handling within stopNodes.",
   "main": "index.js",
   "types": "index.d.ts",
   "repository": {

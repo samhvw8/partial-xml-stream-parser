@@ -26,9 +26,20 @@ A lenient, streaming XML parser for Node.js. This parser is designed to handle X
 - **Mixed Content Handling**: Optimized for processing streams that contain both XML elements and plain text, making it ideal for parsing LLM outputs with embedded tool calls.
 - **Robust Partial State Management**: Better handling of incomplete XML structures at stream boundaries.
 
-## What's New in v1.9.0
+## What's New in v1.9.1
 
-This minor release introduces powerful wildcard pattern support for stopNodes:
+This patch release enhances stopNode functionality with CDATA handling:
+
+- **CDATA Handling in StopNodes**: StopNodes now properly process CDATA content by extracting the actual content and removing CDATA markers:
+  - **Complete CDATA sections**: `<![CDATA[content]]>` becomes `content`
+  - **Streaming CDATA**: Handles CDATA content that spans across multiple chunks
+  - **Boundary-spanning CDATA**: Correctly handles CDATA that contains XML-like content including closing tags
+  - **CDATA-aware parsing**: StopNode boundary detection now skips over CDATA sections when looking for closing tags
+- **Enhanced Test Coverage**: Added 4 new test cases covering CDATA handling scenarios in stopNodes
+
+### Previous Release (v1.9.0)
+
+This minor release introduced powerful wildcard pattern support for stopNodes:
 
 - **Wildcard Pattern Support**: StopNodes now support glob-style patterns with asterisks (`*`) for flexible path matching:
   - **Prefix matching**: `app.*` matches `app.config`, `app.settings`, etc.
@@ -520,6 +531,51 @@ const parser5 = new PartialXMLStreamParser({
 - Multiple wildcards can be used in a single pattern
 - Wildcard patterns work alongside regular stopNode names
 - Patterns are matched against the full path from root to the current element
+
+##### CDATA Handling in StopNodes
+
+StopNodes now properly handle CDATA content by extracting the actual content and removing CDATA markers:
+
+```javascript
+// CDATA content inside stopnodes
+const parser = new PartialXMLStreamParser({
+  stopNodes: ["script"],
+  textNodeName: "#text"
+});
+
+const input = `<root>
+<script type="text/javascript">
+<![CDATA[
+if (x < y && z > 0) {
+  alert("Hello <world>!");
+}
+]]>
+</script>
+</root>`;
+
+const result = parser.parseStream(input);
+console.log(result.xml[0].root.script["#text"]);
+// Output: "\nif (x < y && z > 0) {\n  alert(\"Hello <world>!\");\n}\n"
+// Note: CDATA markers are removed, content is preserved
+
+// CDATA spanning across tag boundaries
+const parser2 = new PartialXMLStreamParser({
+  stopNodes: ["a.b"],
+  textNodeName: "#text"
+});
+
+const input2 = `<a><b><![CDATA[content</b>]]></b></a>`;
+const result2 = parser2.parseStream(input2);
+console.log(result2.xml[0].a.b["#text"]);
+// Output: "content</b>"
+// Note: The </b> inside CDATA is treated as content, not as a closing tag
+```
+
+**CDATA Handling Features:**
+- **Complete CDATA sections**: `<![CDATA[content]]>` becomes `content`
+- **Streaming CDATA**: Handles CDATA content that spans across multiple chunks
+- **Boundary-spanning CDATA**: Correctly handles CDATA that contains XML-like content including closing tags
+- **CDATA-aware parsing**: StopNode boundary detection skips over CDATA sections when looking for closing tags
 
 #### Primitive Type Parsing
 

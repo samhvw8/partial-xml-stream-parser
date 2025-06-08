@@ -1,6 +1,6 @@
 // src/tag-handler.js
 const { addValueToObject } = require("./dom-builder.js");
-const { tryParsePrimitive, decodeXmlEntities, parseAttributes } = require("./utils.js");
+const { tryParsePrimitive, decodeXmlEntities, parseAttributes, processCDATAInStopnode } = require("./utils.js");
 const {
   STATIC_OPENING_TAG_REGEX,
   STATIC_CLOSING_TAG_REGEX,
@@ -436,43 +436,67 @@ function handleOpeningTag(parserContext, tagString, i) {
       let searchPos = contentStartIndex;
       let rawContentEnd = -1;
       let closingTagLengthVal = 0;
-      let contentSearchRegex = parserContext.stopNodeRegexCache[tagName];
-      if (!contentSearchRegex) {
-        const contentSearchRegexStr = `<\\s*${tagName}(?:\\s[^>]*)?>|<\\/\\s*${tagName}\\s*>`;
-        contentSearchRegex = new RegExp(contentSearchRegexStr, "g");
-        parserContext.stopNodeRegexCache[tagName] = contentSearchRegex;
-      }
-      contentSearchRegex.lastIndex = searchPos;
-      let execMatchStop;
-      while (
-        searchPos < len &&
-        (execMatchStop = contentSearchRegex.exec(buffer)) !== null
-      ) {
-        const matchedStopTag = execMatchStop[0];
-        if (
-          matchedStopTag.startsWith("</") ||
-          matchedStopTag.startsWith("<\\/")
-        ) {
-          depth--;
-          if (depth === 0) {
-            rawContentEnd = execMatchStop.index;
-            closingTagLengthVal = matchedStopTag.length;
+      
+      // CDATA-aware parsing instead of regex
+      while (searchPos < len && depth > 0) {
+        // Check for CDATA start
+        if (buffer.startsWith('<![CDATA[', searchPos)) {
+          // Skip over CDATA section
+          const cdataEnd = buffer.indexOf(']]>', searchPos + 9);
+          if (cdataEnd === -1) {
+            // CDATA is incomplete, break out
             break;
           }
-        } else if (!/\/\s*>$/.test(matchedStopTag)) {
-          depth++;
+          searchPos = cdataEnd + 3;
+          continue;
         }
-        searchPos = contentSearchRegex.lastIndex;
+        
+        // Look for next tag
+        const nextLT = buffer.indexOf('<', searchPos);
+        if (nextLT === -1) break;
+        
+        searchPos = nextLT;
+        
+        // Check if it's a closing tag for our stopnode
+        const closingTagPattern = new RegExp(`^<\\/\\s*${tagName}\\s*>`, 'i');
+        const openingTagPattern = new RegExp(`^<\\s*${tagName}(?:\\s[^>]*)?>`, 'i');
+        
+        const closingMatch = buffer.substring(searchPos).match(closingTagPattern);
+        if (closingMatch) {
+          depth--;
+          if (depth === 0) {
+            rawContentEnd = searchPos;
+            closingTagLengthVal = closingMatch[0].length;
+            break;
+          }
+          searchPos += closingMatch[0].length;
+          continue;
+        }
+        
+        const openingMatch = buffer.substring(searchPos).match(openingTagPattern);
+        if (openingMatch) {
+          // Check if it's self-closing
+          if (!/\/\s*>$/.test(openingMatch[0])) {
+            depth++;
+          }
+          searchPos += openingMatch[0].length;
+          continue;
+        }
+        
+        // Not a tag we care about, move to next character
+        searchPos++;
       }
       if (rawContentEnd !== -1) {
         const rawContent = buffer.substring(
           contentStartIndex,
           rawContentEnd,
         );
+        // Process CDATA content in stopnodes
+        const processedContent = processCDATAInStopnode(rawContent);
         addValueToObject(
           stopNodeObject,
           textNodeName,
-          rawContent,
+          processedContent,
           parserContext.customOptions,
         );
         parserContext.parsingIndex = rawContentEnd + closingTagLengthVal;
@@ -482,10 +506,12 @@ function handleOpeningTag(parserContext, tagString, i) {
           contentStartIndex,
           len,
         );
+        // Process CDATA content in partial stopnode content
+        const processedPartialContent = processCDATAInStopnode(newPartialContent);
         addValueToObject(
           stopNodeObject,
           textNodeName,
-          newPartialContent,
+          processedPartialContent,
           parserContext.customOptions,
         );
         parserContext.incompleteStructureState = {

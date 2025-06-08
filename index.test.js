@@ -1505,6 +1505,95 @@ describe("PartialXMLStreamParser", () => {
         });
       });
     });
+
+    describe("stopNode CDATA handling", () => {
+      it('should handle CDATA content inside stopnodes', () => {
+        parser = new PartialXMLStreamParser({
+          stopNodes: ["script"],
+          textNodeName: "#text"
+        });
+
+        const input = `<root>
+<script type="text/javascript">
+<![CDATA[
+if (x < y && z > 0) {
+  alert("Hello <world>!");
+}
+]]>
+</script>
+</root>`;
+
+        const result = parser.parseStream(input);
+        
+        // The CDATA content should be extracted and the CDATA markers should be removed
+        expect(result.xml[0].root.script["#text"]).toBe(`
+
+if (x < y && z > 0) {
+  alert("Hello <world>!");
+}
+
+`);
+      });
+
+      it('should handle multiple CDATA sections in stopnodes', () => {
+        parser = new PartialXMLStreamParser({
+          stopNodes: ["code"],
+          textNodeName: "#text"
+        });
+
+        const input = `<root>
+<code>
+Some text before
+<![CDATA[<tag>content</tag>]]>
+Some text between
+<![CDATA[more & content]]>
+Some text after
+</code>
+</root>`;
+
+        const result = parser.parseStream(input);
+        
+        // CDATA markers should be removed, content should be preserved
+        expect(result.xml[0].root.code["#text"]).toBe(`
+Some text before
+<tag>content</tag>
+Some text between
+more & content
+Some text after
+`);
+      });
+
+      it('should handle partial CDATA in streaming stopnodes', () => {
+        parser = new PartialXMLStreamParser({
+          stopNodes: ["data"],
+          textNodeName: "#text"
+        });
+
+        // Stream the content in chunks
+        let result = parser.parseStream('<root><data><![CDATA[partial');
+        expect(result.metadata.partial).toBe(true);
+        
+        result = parser.parseStream(' content]]></data></root>');
+        expect(result.metadata.partial).toBe(false);
+        
+        // Should extract CDATA content properly
+        expect(result.xml[0].root.data["#text"]).toBe('partial content');
+      });
+
+      it('should handle CDATA spanning across tag boundaries in stopnodes', () => {
+        parser = new PartialXMLStreamParser({
+          stopNodes: ["a.b"],
+          textNodeName: "#text"
+        });
+
+        const input = `<a><b><![CDATA[adsasdas</b>]]></b></a>`;
+
+        const result = parser.parseStream(input);
+        
+        // CDATA content should be extracted properly even when it spans across tag boundaries
+        expect(result.xml[0].a.b["#text"]).toBe('adsasdas</b>');
+      });
+    });
   });
 
   describe("alwaysCreateTextNode option", () => {

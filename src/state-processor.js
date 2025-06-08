@@ -1,5 +1,5 @@
 const { addValueToObject } = require("./dom-builder.js");
-const { tryParsePrimitive } = require("./utils.js");
+const { tryParsePrimitive, processCDATAInStopnode } = require("./utils.js");
 
 /**
  * Handles text content for CDATA and stop node sections
@@ -12,9 +12,12 @@ const { tryParsePrimitive } = require("./utils.js");
 function handleTextContent(context, content, target, textNodeName) {
   if (!content || content.length === 0) return;
 
+  // Process CDATA content in stopnodes
+  const processedContent = processCDATAInStopnode(content);
+  
   const textToAdd = context.customOptions.parsePrimitives
-    ? tryParsePrimitive(content)
-    : content;
+    ? tryParsePrimitive(processedContent)
+    : processedContent;
 
   addValueToObject(target, textNodeName, textToAdd, context.customOptions);
 }
