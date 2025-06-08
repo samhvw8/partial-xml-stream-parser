@@ -1,7 +1,7 @@
 {
   "name": "partial-xml-stream-parser",
-  "version": "1.8.2",
-  "description": "A lenient XML stream parser that can handle incomplete or malformed XML data, with depth control, CDATA support for XML serialization and round-trip parsing.",
+  "version": "1.9.0",
+  "description": "A lenient XML stream parser that can handle incomplete or malformed XML data, with depth control, CDATA support for XML serialization and round-trip parsing, and wildcard pattern support for stopNodes.",
   "main": "index.js",
   "types": "index.d.ts",
   "repository": {
@@ -34,7 +34,11 @@
     "round-trip",
     "depth control",
     "max depth",
-    "nesting limit"
+    "nesting limit",
+    "wildcard",
+    "glob patterns",
+    "stopnodes",
+    "pattern matching"
   ],
   "author": "",
   "license": "MIT",

@@ -26,9 +26,21 @@ A lenient, streaming XML parser for Node.js. This parser is designed to handle X
 - **Mixed Content Handling**: Optimized for processing streams that contain both XML elements and plain text, making it ideal for parsing LLM outputs with embedded tool calls.
 - **Robust Partial State Management**: Better handling of incomplete XML structures at stream boundaries.
 
-## What's New in v1.8.2
+## What's New in v1.9.0
 
-This patch release fixes a critical issue with path-based stopnode matching:
+This minor release introduces powerful wildcard pattern support for stopNodes:
+
+- **Wildcard Pattern Support**: StopNodes now support glob-style patterns with asterisks (`*`) for flexible path matching:
+  - **Prefix matching**: `app.*` matches `app.config`, `app.settings`, etc.
+  - **Suffix matching**: `*.suggest` matches `follow_up.suggest`, `other.suggest`, etc.
+  - **Middle wildcards**: `app.*.value` matches `app.config.value`, `app.settings.value`, etc.
+  - **Multiple wildcards**: `*.config.*` matches any path with `config` in the middle
+- **Enhanced Path Matching**: Combines wildcard patterns with existing exact and suffix matching for maximum flexibility
+- **Comprehensive Test Coverage**: Added 9 new test cases covering all wildcard pattern scenarios and edge cases
+
+### Previous Release (v1.8.2)
+
+This patch release fixed a critical issue with path-based stopnode matching:
 
 - **Fixed Path-based Stopnode Suffix Matching**: Path-based stopnodes now support suffix matching in addition to exact matching. For example, `follow_up.suggest` will now correctly match nodes with the full path `ask_followup_question.follow_up.suggest`.
 - **Enhanced Stopnode Behavior**: Stopnodes now correctly parse and include the specified nodes in results while treating their content as raw text, instead of stopping before the nodes.
@@ -405,7 +417,7 @@ This feature is particularly useful for:
 
 #### Stop Nodes
 
-Stop nodes are tags whose content is not parsed as XML, but treated as raw text:
+Stop nodes are tags whose content is not parsed as XML, but treated as raw text. StopNodes support both exact tag names and flexible wildcard patterns:
 
 ```javascript
 const parser = new PartialXMLStreamParser({
@@ -433,6 +445,81 @@ console.log(JSON.stringify(result, null, 2));
 //   ]
 // }
 ```
+
+##### Wildcard Pattern Support
+
+StopNodes now support glob-style patterns with asterisks (`*`) for flexible path matching:
+
+```javascript
+// Prefix matching: matches any child of 'app'
+const parser1 = new PartialXMLStreamParser({
+  stopNodes: ["app.*"],
+  textNodeName: "#text",
+});
+
+const result1 = parser1.parseStream(
+  '<root><app><config><item>not parsed</item></config><settings><option>also not parsed</option></settings></app></root>'
+);
+console.log(JSON.stringify(result1, null, 2));
+// Output:
+// {
+//   "metadata": { "partial": false },
+//   "xml": [{
+//     "root": {
+//       "app": {
+//         "config": { "#text": "<item>not parsed</item>" },
+//         "settings": { "#text": "<option>also not parsed</option>" }
+//       }
+//     }
+//   }]
+// }
+
+// Suffix matching: matches any path ending with 'suggest'
+const parser2 = new PartialXMLStreamParser({
+  stopNodes: ["*.suggest"],
+  textNodeName: "#text",
+});
+
+const result2 = parser2.parseStream(
+  '<root><follow_up><suggest><option>Option 1</option></suggest></follow_up><other><suggest><item>not parsed</item></suggest></other></root>'
+);
+console.log(JSON.stringify(result2, null, 2));
+// Output:
+// {
+//   "metadata": { "partial": false },
+//   "xml": [{
+//     "root": {
+//       "follow_up": { "suggest": { "#text": "<option>Option 1</option>" } },
+//       "other": { "suggest": { "#text": "<item>not parsed</item>" } }
+//     }
+//   }]
+// }
+
+// Middle wildcards: matches paths like 'app.config.value', 'app.settings.value'
+const parser3 = new PartialXMLStreamParser({
+  stopNodes: ["app.*.value"],
+  textNodeName: "#text",
+});
+
+// Multiple wildcards: matches any path with 'config' in the middle
+const parser4 = new PartialXMLStreamParser({
+  stopNodes: ["*.config.*"],
+  textNodeName: "#text",
+});
+
+// Mixed patterns: combine wildcards with regular stopNodes
+const parser5 = new PartialXMLStreamParser({
+  stopNodes: ["script", "app.*", "*.config"],
+  textNodeName: "#text",
+});
+```
+
+**Wildcard Pattern Rules:**
+- `*` matches any sequence of characters except dots (`.`)
+- Patterns support exact matching, suffix matching, and wildcard matching
+- Multiple wildcards can be used in a single pattern
+- Wildcard patterns work alongside regular stopNode names
+- Patterns are matched against the full path from root to the current element
 
 #### Primitive Type Parsing
 
