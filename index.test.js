@@ -1313,6 +1313,198 @@ describe("PartialXMLStreamParser", () => {
       streamResult = parser.parseStream(null);
       expect(streamResult).toEqual(expectedOutput);
     });
+
+    describe("stopNode wildcard patterns", () => {
+      it("should handle wildcard patterns with asterisk at end (prefix matching)", () => {
+        parser = new PartialXMLStreamParser({
+          stopNodes: ["app.*"],
+          textNodeName: "#text",
+        });
+        const xml = "<root><app><config><item>not parsed</item><value>123</value></config></app><app><settings><option>also not parsed</option></settings></app></root>";
+        let streamResult = parser.parseStream(xml);
+        expect(streamResult).toEqual({
+          metadata: { partial: false },
+          xml: [{
+            root: {
+              app: [
+                { config: { "#text": "<item>not parsed</item><value>123</value>" } },
+                { settings: { "#text": "<option>also not parsed</option>" } }
+              ]
+            }
+          }]
+        });
+      });
+
+      it("should handle wildcard patterns with asterisk at beginning (suffix matching)", () => {
+        parser = new PartialXMLStreamParser({
+          stopNodes: ["*.suggest"],
+          textNodeName: "#text",
+        });
+        const xml = "<root><follow_up><suggest><option>Option 1</option><desc>Description</desc></suggest></follow_up><other><suggest><item>not parsed</item></suggest></other></root>";
+        let streamResult = parser.parseStream(xml);
+        expect(streamResult).toEqual({
+          metadata: { partial: false },
+          xml: [{
+            root: {
+              follow_up: { suggest: { "#text": "<option>Option 1</option><desc>Description</desc>" } },
+              other: { suggest: { "#text": "<item>not parsed</item>" } }
+            }
+          }]
+        });
+      });
+
+      it("should handle wildcard patterns in the middle", () => {
+        parser = new PartialXMLStreamParser({
+          stopNodes: ["app.*.value"],
+          textNodeName: "#text",
+        });
+        const xml = "<root><app><config><value><item>not parsed</item><data>123</data></value></config><settings><value><option>also not parsed</option></value></settings></app></root>";
+        let streamResult = parser.parseStream(xml);
+        expect(streamResult).toEqual({
+          metadata: { partial: false },
+          xml: [{
+            root: {
+              app: {
+                config: { value: { "#text": "<item>not parsed</item><data>123</data>" } },
+                settings: { value: { "#text": "<option>also not parsed</option>" } }
+              }
+            }
+          }]
+        });
+      });
+
+      it("should handle multiple wildcards in one pattern", () => {
+        parser = new PartialXMLStreamParser({
+          stopNodes: ["*.config.*"],
+          textNodeName: "#text",
+        });
+        const xml = "<root><app><config><value><item>not parsed</item></value><setting><data>also not parsed</data></setting></config></app><other><config><data><nested>not parsed either</nested></data></config></other></root>";
+        let streamResult = parser.parseStream(xml);
+        expect(streamResult).toEqual({
+          metadata: { partial: false },
+          xml: [{
+            root: {
+              app: {
+                config: {
+                  value: { "#text": "<item>not parsed</item>" },
+                  setting: { "#text": "<data>also not parsed</data>" }
+                }
+              },
+              other: {
+                config: { data: { "#text": "<nested>not parsed either</nested>" } }
+              }
+            }
+          }]
+        });
+      });
+
+      it("should handle wildcard patterns with suffix matching for longer paths", () => {
+        parser = new PartialXMLStreamParser({
+          stopNodes: ["follow_up.*"],
+          textNodeName: "#text",
+        });
+        const xml = "<ask_followup_question><question>What?</question><follow_up><suggest><option>Option 1</option></suggest><suggest><option>Option 2</option></suggest></follow_up></ask_followup_question>";
+        let streamResult = parser.parseStream(xml);
+        expect(streamResult).toEqual({
+          metadata: { partial: false },
+          xml: [{
+            ask_followup_question: {
+              question: { "#text": "What?" },
+              follow_up: {
+                suggest: [
+                  { "#text": "<option>Option 1</option>" },
+                  { "#text": "<option>Option 2</option>" }
+                ]
+              }
+            }
+          }]
+        });
+      });
+
+      it("should handle complex wildcard patterns with exact and suffix matching", () => {
+        parser = new PartialXMLStreamParser({
+          stopNodes: ["a.*"],
+          textNodeName: "#text",
+        });
+        const xml = "<root><a><b><item>exact match not parsed</item></b></a><deep><nested><a><c><data>suffix match not parsed</data></c></a></nested></deep></root>";
+        let streamResult = parser.parseStream(xml);
+        expect(streamResult).toEqual({
+          metadata: { partial: false },
+          xml: [{
+            root: {
+              a: { b: { "#text": "<item>exact match not parsed</item>" } },
+              deep: {
+                nested: {
+                  a: { c: { "#text": "<data>suffix match not parsed</data>" } }
+                }
+              }
+            }
+          }]
+        });
+      });
+
+      it("should handle wildcard patterns mixed with regular stopNodes", () => {
+        parser = new PartialXMLStreamParser({
+          stopNodes: ["script", "app.*", "*.config"],
+          textNodeName: "#text",
+        });
+        const xml = "<root><script>let x = <tag>not parsed</tag>;</script><app><settings><item>not parsed</item></settings></app><other><config><data>also not parsed</data></config></other></root>";
+        let streamResult = parser.parseStream(xml);
+        expect(streamResult).toEqual({
+          metadata: { partial: false },
+          xml: [{
+            root: {
+              script: { "#text": "let x = <tag>not parsed</tag>;" },
+              app: { settings: { "#text": "<item>not parsed</item>" } },
+              other: { config: { "#text": "<data>also not parsed</data>" } }
+            }
+          }]
+        });
+      });
+
+      it("should not match partial wildcard patterns", () => {
+        parser = new PartialXMLStreamParser({
+          stopNodes: ["app.config.*"],
+          textNodeName: "#text",
+        });
+        const xml = "<root><app><other><item>normal parsing</item></other></app><different><config><value><data>also normal</data></value></config></different></root>";
+        let streamResult = parser.parseStream(xml);
+        expect(streamResult).toEqual({
+          metadata: { partial: false },
+          xml: [{
+            root: {
+              app: { other: { item: { "#text": "normal parsing" } } },
+              different: {
+                config: { value: { data: { "#text": "also normal" } } }
+              }
+            }
+          }]
+        });
+      });
+
+      it("should handle wildcard patterns with attributes", () => {
+        parser = new PartialXMLStreamParser({
+          stopNodes: ["app.*"],
+          textNodeName: "#text",
+          attributeNamePrefix: "@",
+        });
+        const xml = '<root><app><config id="test"><item>not parsed</item><value attr="val">also not parsed</value></config></app></root>';
+        let streamResult = parser.parseStream(xml);
+        expect(streamResult).toEqual({
+          metadata: { partial: false },
+          xml: [{
+            root: {
+              app: {
+                config: {
+                  "@id": "test",
+                  "#text": '<item>not parsed</item><value attr="val">also not parsed</value>'
+                }
+              }
+            }
+          }]
+        });
+      });
+    });
   });
 
   describe("alwaysCreateTextNode option", () => {

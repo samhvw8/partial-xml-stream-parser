@@ -1,5 +1,5 @@
 import { describe, test } from "vitest";
-import PartialXMLStreamParser from "./index.js";
+import { PartialXMLStreamParser } from "./index.js";
 import { performance } from "perf_hooks"; // Explicit import for clarity, though global in Node
 
 // Note: For accurate heap measurements, run Node.js with the --expose-gc flag

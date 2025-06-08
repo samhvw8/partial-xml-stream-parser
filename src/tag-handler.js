@@ -369,14 +369,32 @@ function handleOpeningTag(parserContext, tagString, i) {
       : tagName;
     const isSimpleStopNode = parserContext.simpleStopNodes.has(tagName);
     
-    // Check for path stopnode matches - both exact matches and suffix matches
+    // Check for path stopnode matches - exact matches, suffix matches, and wildcard patterns
     let isPathStopNode = parserContext.pathStopNodes.has(currentPath);
     
-    // If no exact match, check if any path stopnode is a suffix of the current path
+    // If no exact match, check for suffix matches and wildcard patterns
     if (!isPathStopNode) {
       for (const pathStopNode of parserContext.pathStopNodes) {
-        if (currentPath.endsWith(pathStopNode) &&
-            (currentPath === pathStopNode || currentPath.endsWith('.' + pathStopNode))) {
+        // Check for wildcard patterns (e.g., "a.*", "*.suggest", "a.*.c")
+        if (pathStopNode.includes('*')) {
+          // Convert glob pattern to regex
+          const regexPattern = pathStopNode
+            .replace(/\./g, '\\.')  // Escape dots
+            .replace(/\*/g, '[^.]*'); // Replace * with non-dot characters
+          
+          // Check both exact match and suffix match for wildcard patterns
+          const exactRegex = new RegExp(`^${regexPattern}$`);
+          const suffixRegex = new RegExp(`\\.${regexPattern}$`);
+          
+          
+          if (exactRegex.test(currentPath) || suffixRegex.test(currentPath)) {
+            isPathStopNode = true;
+            break;
+          }
+        }
+        // Check for suffix matches (existing logic)
+        else if (currentPath.endsWith(pathStopNode) &&
+                 (currentPath === pathStopNode || currentPath.endsWith('.' + pathStopNode))) {
           isPathStopNode = true;
           break;
         }
