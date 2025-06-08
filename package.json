@@ -1,6 +1,6 @@
 {
   "name": "partial-xml-stream-parser",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "description": "A lenient XML stream parser that can handle incomplete or malformed XML data, with depth control, CDATA support for XML serialization and round-trip parsing.",
   "main": "index.js",
   "types": "index.d.ts",

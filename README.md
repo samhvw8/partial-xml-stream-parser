@@ -26,7 +26,15 @@ A lenient, streaming XML parser for Node.js. This parser is designed to handle X
 - **Mixed Content Handling**: Optimized for processing streams that contain both XML elements and plain text, making it ideal for parsing LLM outputs with embedded tool calls.
 - **Robust Partial State Management**: Better handling of incomplete XML structures at stream boundaries.
 
-## What's New in v1.8.1
+## What's New in v1.8.2
+
+This patch release fixes a critical issue with path-based stopnode matching:
+
+- **Fixed Path-based Stopnode Suffix Matching**: Path-based stopnodes now support suffix matching in addition to exact matching. For example, `follow_up.suggest` will now correctly match nodes with the full path `ask_followup_question.follow_up.suggest`.
+- **Enhanced Stopnode Behavior**: Stopnodes now correctly parse and include the specified nodes in results while treating their content as raw text, instead of stopping before the nodes.
+- **Comprehensive Test Coverage**: Added new test suite specifically for stopnode suffix matching scenarios.
+
+### Previous Release (v1.8.1)
 
 This patch release fixes a critical bug in the `maxDepth` feature:
 

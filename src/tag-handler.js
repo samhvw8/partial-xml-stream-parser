@@ -368,7 +368,20 @@ function handleOpeningTag(parserContext, tagString, i) {
       ? `${parentPath}.${tagName}`
       : tagName;
     const isSimpleStopNode = parserContext.simpleStopNodes.has(tagName);
-    const isPathStopNode = parserContext.pathStopNodes.has(currentPath);
+    
+    // Check for path stopnode matches - both exact matches and suffix matches
+    let isPathStopNode = parserContext.pathStopNodes.has(currentPath);
+    
+    // If no exact match, check if any path stopnode is a suffix of the current path
+    if (!isPathStopNode) {
+      for (const pathStopNode of parserContext.pathStopNodes) {
+        if (currentPath.endsWith(pathStopNode) &&
+            (currentPath === pathStopNode || currentPath.endsWith('.' + pathStopNode))) {
+          isPathStopNode = true;
+          break;
+        }
+      }
+    }
     // Check if maxDepth is exceeded - if so, treat as fallback text
     // tagStack.length represents the current nesting depth (0-based)
     // maxDepth=1: allow depth 0 only, treat depth 1+ as text (tagStack.length > 1)
