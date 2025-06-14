@@ -4,29 +4,45 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/samhvw8/partial-xml-stream-parser/actions)
 [![npm downloads](https://img.shields.io/npm/dm/partial-xml-stream-parser.svg)](https://www.npmjs.com/package/partial-xml-stream-parser)
+[![TypeScript](https://img.shields.io/badge/TypeScript-Ready-blue.svg)](https://www.typescriptlang.org/)
 
-A lenient, streaming XML parser for Node.js. This parser is designed to handle XML data that may be incomplete or not perfectly well-formed, making it suitable for processing streams of XML where the entire document might not be available at once. It's particularly optimized for handling mixed content with both XML elements and plain text, making it ideal for parsing LLM outputs that contain tool calls embedded in natural language.
+A lenient, streaming XML parser for **Node.js and browsers** written in **TypeScript** with complete type safety. This parser is designed to handle XML data that may be incomplete or not perfectly well-formed, making it suitable for processing streams of XML where the entire document might not be available at once. It's particularly optimized for handling mixed content with both XML elements and plain text, making it ideal for parsing LLM outputs that contain tool calls embedded in natural language.
 
 ## Features
 
-- **Streaming Parser**: Processes XML data in chunks.
-- **Lenient**: Attempts to parse malformed or incomplete XML.
-- **Object Output**: Converts XML to a JavaScript object structure.
-- **Attribute Handling**: Parses XML attributes with a configurable prefix.
-- **Text Node Handling**: Manages text content within tags. Text content is always placed in a specified text node (e.g., `"#text"`), as `alwaysCreateTextNode` defaults to `true`.
-- **Entity Decoding**: Decodes basic XML entities (`<`, `>`, `&`, `"`, `'`) and numeric entities.
-- **CDATA Support**: Properly handles CDATA sections and automatically wraps XML-like content in CDATA for serialization.
-- **XML Serialization**: Convert parsed XML objects back to XML strings with `xmlObjectToString`.
-- **Round-trip Parsing**: Full support for parsing → serializing → parsing workflows.
-- **Stop Nodes**: Ability to specify tags whose content should not be parsed.
-- **Max Depth Control**: Limit XML parsing depth with the `maxDepth` option - tags beyond the specified depth are treated as stop nodes.
-- **Primitive Type Parsing**: Optional conversion of string values to numbers and booleans.
-- **Enhanced Conditional Root Node Parsing**: Improved handling of XML content when using the `allowedRootNodes` option, with better detection and processing of allowed root elements.
-- **Multiple Root Elements**: Supports XML with multiple root elements, returned as an array.
-- **Mixed Content Handling**: Optimized for processing streams that contain both XML elements and plain text, making it ideal for parsing LLM outputs with embedded tool calls.
-- **Robust Partial State Management**: Better handling of incomplete XML structures at stream boundaries.
+- **🔷 TypeScript First**: Written in TypeScript with comprehensive type definitions for full type safety
+- **🌐 Universal Compatibility**: Works in both Node.js and modern browsers (ES2020+)
+- **📦 Zero Dependencies**: No external runtime dependencies, only TypeScript for development
+- **🔄 Streaming Parser**: Processes XML data in chunks with full type safety
+- **🛡️ Lenient**: Attempts to parse malformed or incomplete XML
+- **📊 Object Output**: Converts XML to a strongly-typed JavaScript object structure
+- **🏷️ Attribute Handling**: Parses XML attributes with a configurable prefix
+- **📝 Text Node Handling**: Manages text content within tags. Text content is always placed in a specified text node (e.g., `"#text"`), as `alwaysCreateTextNode` defaults to `true`
+- **🔤 Entity Decoding**: Decodes basic XML entities (`<`, `>`, `&`, `"`, `'`) and numeric entities
+- **📋 CDATA Support**: Properly handles CDATA sections and automatically wraps XML-like content in CDATA for serialization
+- **🔄 XML Serialization**: Convert parsed XML objects back to XML strings with `xmlObjectToString`
+- **🔁 Round-trip Parsing**: Full support for parsing → serializing → parsing workflows
+- **🛑 Stop Nodes**: Ability to specify tags whose content should not be parsed, with wildcard pattern support
+- **📏 Max Depth Control**: Limit XML parsing depth with the `maxDepth` option - tags beyond the specified depth are treated as stop nodes
+- **🔢 Primitive Type Parsing**: Optional conversion of string values to numbers and booleans
+- **🎯 Enhanced Conditional Root Node Parsing**: Improved handling of XML content when using the `allowedRootNodes` option
+- **📚 Multiple Root Elements**: Supports XML with multiple root elements, returned as an array
+- **🤖 Mixed Content Handling**: Optimized for processing streams that contain both XML elements and plain text, ideal for parsing LLM outputs
+- **⚡ Robust Partial State Management**: Better handling of incomplete XML structures at stream boundaries
 
-## What's New in v1.9.1
+## What's New in v1.9.2
+
+This patch release completes the **TypeScript conversion** of the entire codebase:
+
+- **🔷 Full TypeScript Conversion**: The entire codebase has been converted from JavaScript to TypeScript
+- **📘 Complete Type Definitions**: Comprehensive type definitions for all parser options, return types, and internal structures
+- **🛡️ Type Safety**: Full compile-time type checking for better development experience and fewer runtime errors
+- **📦 TypeScript-Ready**: Ships with `.d.ts` declaration files for seamless TypeScript integration
+- **🔧 Improved Developer Experience**: Better IDE support with autocomplete, type hints, and inline documentation
+- **✅ Maintained API Compatibility**: All existing functionality preserved with the same public API
+- **🧪 Enhanced Test Suite**: Updated test suite with improved type safety and consistency
+
+### Previous Release (v1.9.1)
 
 This patch release enhances stopNode functionality with CDATA handling:
 
@@ -222,11 +238,38 @@ yarn add partial-xml-stream-parser
 
 ## Usage
 
+### TypeScript
+
+```typescript
+import { PartialXMLStreamParser, xmlObjectToString, ParserOptions, ParseResult } from "partial-xml-stream-parser";
+
+// Type-safe parser configuration
+const options: ParserOptions = {
+  textNodeName: "#text", // Default is "#text"
+  attributeNamePrefix: "@", // Default is "@"
+  alwaysCreateTextNode: true, // Default is true
+  parsePrimitives: false, // Default is false
+  stopNodes: [], // Default is empty
+  maxDepth: null, // Default is null (no depth limit)
+  allowedRootNodes: [], // Default is empty (parse all XML unconditionally)
+};
+
+const parser = new PartialXMLStreamParser(options);
+
+// Type-safe parsing with full intellisense
+const result: ParseResult = parser.parseStream('<root><item id="1">Test</item></root>');
+
+// TypeScript knows the structure of the result
+if (result.xml && result.xml.length > 0) {
+  console.log("Parsed successfully:", result.xml[0]);
+  console.log("Is partial:", result.metadata.partial);
+}
+```
+
+### JavaScript (CommonJS)
+
 ```javascript
 const { PartialXMLStreamParser, xmlObjectToString } = require("partial-xml-stream-parser");
-
-// Or if you only need the parser:
-// const { PartialXMLStreamParser } = require("partial-xml-stream-parser");
 
 const parser = new PartialXMLStreamParser({
   textNodeName: "#text", // Default is "#text"
@@ -236,6 +279,18 @@ const parser = new PartialXMLStreamParser({
   // stopNodes: [], // Default is empty
   // maxDepth: null, // Default is null (no depth limit)
   // allowedRootNodes: [], // Default is empty (parse all XML unconditionally)
+});
+```
+
+### JavaScript (ES Modules)
+
+```javascript
+import { PartialXMLStreamParser, xmlObjectToString } from "partial-xml-stream-parser";
+
+const parser = new PartialXMLStreamParser({
+  textNodeName: "#text",
+  attributeNamePrefix: "@",
+  alwaysCreateTextNode: true,
 });
 
 let result;
@@ -320,6 +375,44 @@ console.log(JSON.stringify(result, null, 2));
 ## XML Serialization and Round-trip Parsing
 
 The `xmlObjectToString` function allows you to convert parsed XML objects back to XML strings, with automatic CDATA support for content containing XML-like characters:
+
+### TypeScript
+
+```typescript
+import { PartialXMLStreamParser, xmlObjectToString } from "partial-xml-stream-parser";
+
+// Type-safe XML object structure
+interface DocumentStructure {
+  document: {
+    "@version": string;
+    header: { title: string };
+    body: {
+      section: Array<{
+        "@id": string;
+        p: string;
+      }>;
+    };
+  };
+}
+
+const xmlObject: DocumentStructure = {
+  document: {
+    "@version": "1.0",
+    header: { title: "Test Document" },
+    body: {
+      section: [
+        { "@id": "s1", p: "Paragraph 1" },
+        { "@id": "s2", p: "Paragraph 2 with <special> chars" }
+      ]
+    }
+  }
+};
+
+const xmlString = xmlObjectToString(xmlObject);
+console.log(xmlString);
+```
+
+### JavaScript
 
 ```javascript
 const { PartialXMLStreamParser, xmlObjectToString } = require("partial-xml-stream-parser");

@@ -1,7 +1,7 @@
 {
   "name": "partial-xml-stream-parser",
-  "version": "1.9.1",
-  "description": "A lenient XML stream parser that can handle incomplete or malformed XML data, with depth control, CDATA support for XML serialization and round-trip parsing, wildcard pattern support for stopNodes, and CDATA handling within stopNodes.",
+  "version": "1.9.2",
+  "description": "A lenient XML stream parser for Node.js and browsers that can handle incomplete or malformed XML data, with depth control, CDATA support for XML serialization and round-trip parsing, wildcard pattern support for stopNodes, and CDATA handling within stopNodes. Now fully written in TypeScript with complete type safety.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "repository": {
@@ -41,7 +41,13 @@
     "wildcard",
     "glob patterns",
     "stopnodes",
-    "pattern matching"
+    "pattern matching",
+    "typescript",
+    "type-safe",
+    "types",
+    "browser",
+    "universal",
+    "isomorphic"
   ],
   "author": "",
   "license": "MIT",

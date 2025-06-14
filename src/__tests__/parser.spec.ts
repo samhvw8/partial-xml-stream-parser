@@ -270,6 +270,20 @@ describe("PartialXMLStreamParser", () => {
 		})
 	})
 
+	it("should handle CDATA sections containing CDATA-like content", () => {
+		parser = new PartialXMLStreamParser({ textNodeName: "#text" })
+		let streamResult = parser.parseStream("<root><![CDATA[<![CDATA[test]]>]]></root>")
+		expect(streamResult).toEqual({
+			metadata: { partial: false },
+			xml: [{ root: { "#text": "<![CDATA[test]]>" } }],
+		})
+		streamResult = parser.parseStream(null)
+		expect(streamResult).toEqual({
+			metadata: { partial: false },
+			xml: [{ root: { "#text": "<![CDATA[test]]>" } }],
+		})
+	})
+
 	it("should handle unterminated comments", () => {
 		parser = new PartialXMLStreamParser()
 		let streamResult = parser.parseStream("<root><!-- This is an unterminated comment")
