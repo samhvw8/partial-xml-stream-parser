@@ -2,18 +2,21 @@
   "name": "partial-xml-stream-parser",
   "version": "1.9.1",
   "description": "A lenient XML stream parser that can handle incomplete or malformed XML data, with depth control, CDATA support for XML serialization and round-trip parsing, wildcard pattern support for stopNodes, and CDATA handling within stopNodes.",
-  "main": "index.js",
-  "types": "index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "repository": {
     "type": "git",
     "url": "https://github.com/samhvw8/partial-xml-stream-parser.git"
   },
   "files": [
-    "index.js",
-    "index.d.ts",
+    "dist/",
     "src/"
   ],
   "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "clean": "rm -rf dist index.js index.d.ts index.js.map index.d.ts.map",
+    "prepublishOnly": "npm run clean && npm run build",
     "test": "CI=true vitest",
     "bench": "vitest bench"
   },
@@ -43,6 +46,8 @@
   "author": "",
   "license": "MIT",
   "devDependencies": {
+    "@types/node": "^24.0.1",
+    "typescript": "^5.0.0",
     "vitest": "^3.1.3"
   }
 }
