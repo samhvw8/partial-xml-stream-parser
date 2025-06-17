@@ -270,6 +270,20 @@ describe("PartialXMLStreamParser", () => {
 		})
 	})
 
+	it("should handle CDATA sections containing CDATA-like content", () => {
+		parser = new PartialXMLStreamParser({ textNodeName: "#text" })
+		let streamResult = parser.parseStream("<root><![CDATA[<![CDATA[test]]>]]></root>")
+		expect(streamResult).toEqual({
+			metadata: { partial: false },
+			xml: [{ root: { "#text": "<![CDATA[test]]>" } }],
+		})
+		streamResult = parser.parseStream(null)
+		expect(streamResult).toEqual({
+			metadata: { partial: false },
+			xml: [{ root: { "#text": "<![CDATA[test]]>" } }],
+		})
+	})
+
 	it("should handle unterminated comments", () => {
 		parser = new PartialXMLStreamParser()
 		let streamResult = parser.parseStream("<root><!-- This is an unterminated comment")
@@ -2844,7 +2858,7 @@ describe("xmlObjectToString", () => {
 				expect(result).toContain("<nullValue></nullValue>")
 				expect(result).toContain("<undefinedValue></undefinedValue>")
 			})
-
+	
 			it("should handle function and object edge cases", () => {
 				const input = {
 					edge: {
@@ -2857,6 +2871,83 @@ describe("xmlObjectToString", () => {
 				expect(result).toContain("<date>2023-01-01T00:00:00.000Z</date>")
 				expect(result).toContain("<regex>/test/</regex>")
 				expect(result).toContain("<array>1</array><array>2</array><array>3</array>")
+			})
+		})
+	
+		describe("UTF-8 Content Support", () => {
+			it("should handle Chinese characters in text content", () => {
+				const input = {
+					中文: {
+						"#text": "这是中文内容测试",
+					},
+					测试: "简体中文",
+					繁體中文: "這是繁體中文測試",
+				}
+				const result = xmlObjectToString(input)
+				expect(result).toBe("<中文>这是中文内容测试</中文><测试>简体中文</测试><繁體中文>這是繁體中文測試</繁體中文>")
+			})
+	
+			it("should handle Vietnamese characters in text content", () => {
+				const input = {
+					tiếngViệt: {
+						"#text": "Đây là nội dung tiếng Việt",
+					},
+					thử_nghiệm: "Kiểm tra ký tự đặc biệt",
+					địa_chỉ: "Hà Nội, Việt Nam",
+				}
+				const result = xmlObjectToString(input)
+				expect(result).toBe("<tiếngViệt>Đây là nội dung tiếng Việt</tiếngViệt><thử_nghiệm>Kiểm tra ký tự đặc biệt</thử_nghiệm><địa_chỉ>Hà Nội, Việt Nam</địa_chỉ>")
+			})
+	
+			it("should handle mixed UTF-8 characters in attributes", () => {
+				const input = {
+					document: {
+						"@标题": "中文标题",
+						"@tiêu_đề": "Tiêu đề tiếng Việt",
+						"@emoji": "🚀 测试 🎉",
+						"#text": "Mixed content with 中文 and tiếng Việt",
+					},
+				}
+				const result = xmlObjectToString(input)
+				expect(result).toBe('<document 标题="中文标题" tiêu_đề="Tiêu đề tiếng Việt" emoji="🚀 测试 🎉">Mixed content with 中文 and tiếng Việt</document>')
+			})
+	
+			it("should handle complex nested UTF-8 structure", () => {
+				const input = {
+					应用程序: {
+						"@版本": "1.0",
+						配置: {
+							数据库: {
+								"@主机": "localhost",
+								"#text": "MySQL 数据库配置",
+							},
+							语言设置: {
+								中文: "简体中文",
+								越南语: "Tiếng Việt",
+								英语: "English",
+							},
+						},
+						用户信息: [
+							{
+								"@姓名": "张三",
+								"@địa_chỉ": "Hà Nội",
+								"#text": "用户详细信息",
+							},
+							{
+								"@姓名": "李四",
+								"@địa_chỉ": "TP. Hồ Chí Minh",
+								"#text": "另一个用户",
+							},
+						],
+					},
+				}
+				const result = xmlObjectToString(input)
+				expect(result).toContain('<应用程序 版本="1.0">')
+				expect(result).toContain('<数据库 主机="localhost">MySQL 数据库配置</数据库>')
+				expect(result).toContain('<中文>简体中文</中文>')
+				expect(result).toContain('<越南语>Tiếng Việt</越南语>')
+				expect(result).toContain('姓名="张三" địa_chỉ="Hà Nội"')
+				expect(result).toContain('姓名="李四" địa_chỉ="TP. Hồ Chí Minh"')
 			})
 		})
 	})
